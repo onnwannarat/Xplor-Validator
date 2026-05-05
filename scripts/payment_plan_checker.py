@@ -22,9 +22,9 @@ Additional checks:
 """
 
 import csv
+import io
 import os
-import tkinter as tk
-from tkinter import filedialog, messagebox
+import tempfile
 from datetime import datetime
 from pathlib import Path
 
@@ -291,12 +291,7 @@ def process_csv(filepath: str, col: dict) -> dict:
 # ─────────────────────────── File writers ───────────────────────────────────
 
 def _output_dir(filepath: str) -> Path:
-    """Return (and create) the Output folder.
-
-    If the source file lives inside a folder named 'Input', the Output folder
-    is placed alongside that Input folder (i.e. at the same level).
-    Otherwise it is placed next to the source file as before.
-    """
+    """Return (and create) the Output folder next to filepath."""
     src = Path(filepath).parent
     base = src.parent if src.name.lower() == "input" else src
     out = base / "Output"
@@ -304,8 +299,17 @@ def _output_dir(filepath: str) -> Path:
     return out
 
 
-def write_cleaned_csv(filepath: str, fieldnames: list, rows: list) -> str:
-    out = _output_dir(filepath) / f"{Path(filepath).stem}_cleaned.csv"
+def _resolve_out_dir(filepath: str, out_dir: str | None) -> Path:
+    """Return out_dir as a Path (creating it), or fall back to _output_dir."""
+    if out_dir:
+        p = Path(out_dir)
+        p.mkdir(parents=True, exist_ok=True)
+        return p
+    return _output_dir(filepath)
+
+
+def write_cleaned_csv(filepath: str, fieldnames: list, rows: list, out_dir: str | None = None) -> str:
+    out = _resolve_out_dir(filepath, out_dir) / f"{Path(filepath).stem}_cleaned.csv"
     with open(out, "w", newline="", encoding="utf-8-sig") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
         writer.writeheader()
@@ -334,7 +338,7 @@ def _safe_filename(name: str) -> str:
     return name.strip()
 
 
-def write_split_csvs(filepath: str, col: dict, rows: list, service_map: dict) -> dict:
+def write_split_csvs(filepath: str, col: dict, rows: list, service_map: dict, out_dir: str | None = None) -> dict:
     """
     Split processed rows by Service ID and write one CSV per service.
 
@@ -345,7 +349,7 @@ def write_split_csvs(filepath: str, col: dict, rows: list, service_map: dict) ->
 
     Returns {"known": {service_name: path}, "unknown": {service_id: path}}
     """
-    out_dir = _output_dir(filepath)
+    out_dir = _resolve_out_dir(filepath, out_dir)
     unknown_dir = out_dir / "unknown"
 
     # Group rows by service_id value
@@ -419,9 +423,9 @@ def _translate_error_rows(errors: dict, row_map: dict) -> None:
                 e["row"] = row_map[orig]
 
 
-def write_error_report(filepath: str, errors: dict) -> str:
+def write_error_report(filepath: str, errors: dict, out_dir: str | None = None) -> str:
     """Write a colour-coded Excel error report (.xlsx)."""
-    out = _output_dir(filepath) / f"{Path(filepath).stem}_error_report.xlsx"
+    out = _resolve_out_dir(filepath, out_dir) / f"{Path(filepath).stem}_error_report.xlsx"
 
     # ── Colour palette ───────────────────────────────────────────────────
     C_WEEKEND_HEADER = "C0392B"   # deep red
@@ -758,396 +762,108 @@ def write_error_report(filepath: str, errors: dict) -> str:
     return str(out)
 
 
-# ─────────────────────────── GUI ────────────────────────────────────────────
+# ─────────────────────────── Streamlit wrapper ──────────────────────────────
 
-class App(tk.Tk):
-    def __init__(self):
-        super().__init__()
-        self.title("Payment Plan Import Checker  v2")
-        self.resizable(True, True)
-        self.minsize(820, 640)
-        self.configure(bg="#F5F5F5")
+def run_payment_plan_checker(
+    input_bytes: bytes,
+    filename: str,
+    service_ids_bytes: bytes,
+    output_dir: str,
+    col_mapping: dict | None = None,
+) -> dict:
+    """Validate and process a payment plan CSV from in-memory bytes.
 
-        self.col_vars = {k: tk.StringVar(value=v) for k, v in DEFAULT_COLUMNS.items()}
-        self.filepath = tk.StringVar()
+    Parameters
+    ----------
+    input_bytes:
+        Raw bytes of the input CSV.
+    filename:
+        Original filename (used for output file naming).
+    service_ids_bytes:
+        Raw bytes of serviceIDs.csv.
+    output_dir:
+        Absolute path where all output files will be saved.
+    col_mapping:
+        Column name mapping dict.  Defaults to DEFAULT_COLUMNS if None.
 
-        self._build_ui()
-        self._center_window(900, 750)
+    Returns
+    -------
+    dict with keys: result (process_csv output), cleaned_path, error_path,
+    split_result, col (the mapping used).
+    """
+    col = col_mapping or DEFAULT_COLUMNS.copy()
 
-    # ── Layout ──────────────────────────────────────────────────────────────
+    # Write bytes to a temp file so process_csv can read it
+    with tempfile.NamedTemporaryFile(
+        suffix=".csv", delete=False, mode="wb", prefix=Path(filename).stem + "_"
+    ) as tmp:
+        tmp.write(input_bytes)
+        tmp_path = tmp.name
 
-    def _build_ui(self):
-        PAD = {"padx": 12, "pady": 5}
-
-        # Title
-        tf = tk.Frame(self, bg="#1565C0")
-        tf.pack(fill="x")
-        tk.Label(tf, text="  Payment Plan Import Checker",
-                 font=("Segoe UI", 14, "bold"), fg="white", bg="#1565C0",
-                 anchor="w", pady=10).pack(fill="x", padx=12)
-        tk.Label(tf, text="  Validates against Onboarding Tool error rules from technical docs",
-                 font=("Segoe UI", 9), fg="#90CAF9", bg="#1565C0",
-                 anchor="w", pady=2).pack(fill="x", padx=12)
-
-        # File selector
-        ff = tk.LabelFrame(self, text=" 1. Select CSV File ", font=("Segoe UI", 10, "bold"),
-                           bg="#F5F5F5", fg="#333")
-        ff.pack(fill="x", **PAD)
-        inner = tk.Frame(ff, bg="#F5F5F5")
-        inner.pack(fill="x", padx=8, pady=6)
-        tk.Entry(inner, textvariable=self.filepath, font=("Segoe UI", 10),
-                 width=60, state="readonly").pack(side="left", fill="x", expand=True)
-        tk.Button(inner, text="Browse…", command=self._browse,
-                  bg="#1976D2", fg="white", font=("Segoe UI", 10, "bold"),
-                  relief="flat", padx=10, cursor="hand2").pack(side="left", padx=(8, 0))
-
-        # Column mapping
-        cf = tk.LabelFrame(self, text=" 2. Column Mapping  (edit if your CSV uses different column names) ",
-                           font=("Segoe UI", 10, "bold"), bg="#F5F5F5", fg="#333")
-        cf.pack(fill="x", **PAD)
-
-        grid = tk.Frame(cf, bg="#F5F5F5")
-        grid.pack(fill="x", padx=8, pady=4)
-
-        keys = list(COLUMN_LABELS.keys())
-        for idx, key in enumerate(keys):
-            r, c = divmod(idx, 3)
-            label = COLUMN_LABELS[key]
-            fg = "#C62828" if "*required" in label else "#555"
-            lbl_text = label.replace("  *required", " *")
-            tk.Label(grid, text=lbl_text + ":", font=("Segoe UI", 8),
-                     bg="#F5F5F5", fg=fg, anchor="e").grid(
-                row=r, column=c * 2, sticky="e", padx=(8, 3), pady=2)
-            tk.Entry(grid, textvariable=self.col_vars[key],
-                     font=("Segoe UI", 8), width=24).grid(
-                row=r, column=c * 2 + 1, sticky="ew", padx=(0, 10), pady=2)
-        for c in range(3):
-            grid.columnconfigure(c * 2 + 1, weight=1)
-
-        # Run button
-        bf = tk.Frame(self, bg="#F5F5F5")
-        bf.pack(fill="x", **PAD)
-        self.run_btn = tk.Button(
-            bf, text="▶  Validate and Generate Files",
-            command=self._run, bg="#2E7D32", fg="white",
-            font=("Segoe UI", 12, "bold"), relief="flat",
-            padx=20, pady=8, cursor="hand2", state="disabled",
-        )
-        self.run_btn.pack(side="left")
-        self.status_lbl = tk.Label(bf, text="", font=("Segoe UI", 10),
-                                   bg="#F5F5F5", fg="#666")
-        self.status_lbl.pack(side="left", padx=16)
-
-        # Results
-        rf = tk.LabelFrame(self, text=" 3. Results ",
-                           font=("Segoe UI", 10, "bold"), bg="#F5F5F5", fg="#333")
-        rf.pack(fill="both", expand=True, **PAD)
-
-        self.results = tk.Text(rf, font=("Consolas", 9), bg="#1E1E1E", fg="#D4D4D4",
-                               insertbackground="white", wrap="none", relief="flat",
-                               state="disabled")
-        sb_y = tk.Scrollbar(rf, command=self.results.yview)
-        sb_x = tk.Scrollbar(rf, orient="horizontal", command=self.results.xview)
-        self.results.configure(yscrollcommand=sb_y.set, xscrollcommand=sb_x.set)
-        sb_y.pack(side="right", fill="y")
-        sb_x.pack(side="bottom", fill="x")
-        self.results.pack(fill="both", expand=True, padx=4, pady=4)
-
-        self.results.tag_config("header", foreground="#569CD6", font=("Consolas", 9, "bold"))
-        self.results.tag_config("ok", foreground="#4EC9B0")
-        self.results.tag_config("warn", foreground="#DCDCAA")
-        self.results.tag_config("error", foreground="#F44747", font=("Consolas", 9, "bold"))
-        self.results.tag_config("weekend", foreground="#FF4500", font=("Consolas", 9, "bold"))
-        self.results.tag_config("orange", foreground="#FF8C00")
-        self.results.tag_config("dim", foreground="#858585")
-        self.results.tag_config("path", foreground="#9CDCFE")
-
-        tk.Label(self, text="Payment Plan Import Checker  •  Xplor Technologies",
-                 font=("Segoe UI", 8), bg="#F5F5F5", fg="#AAAAAA").pack(pady=(0, 4))
-
-    # ── Helpers ─────────────────────────────────────────────────────────────
-
-    def _center_window(self, w, h):
-        sw, sh = self.winfo_screenwidth(), self.winfo_screenheight()
-        self.geometry(f"{w}x{h}+{(sw - w) // 2}+{(sh - h) // 2}")
-
-    def _browse(self):
-        input_dir = Path(__file__).parent / "Input"
-        initial_dir = str(input_dir) if input_dir.is_dir() else str(Path(__file__).parent)
-        path = filedialog.askopenfilename(
-            title="Select CSV File",
-            initialdir=initial_dir,
-            filetypes=[("CSV files", "*.csv"), ("All files", "*.*")])
-        if path:
-            self.filepath.set(path)
-            self.run_btn.config(state="normal")
-            self._clear_results()
-            self.status_lbl.config(text="")
-
-    def _clear_results(self):
-        self.results.config(state="normal")
-        self.results.delete("1.0", "end")
-        self.results.config(state="disabled")
-
-    def _append(self, text: str, tag: str = ""):
-        self.results.config(state="normal")
-        self.results.insert("end", text, tag)
-        self.results.config(state="disabled")
-
-    # ── Main runner ──────────────────────────────────────────────────────────
-
-    def _run(self):
-        fp = self.filepath.get()
-        if not fp or not os.path.isfile(fp):
-            messagebox.showerror("Error", "Please select a valid CSV file.")
-            return
-
-        col = {k: v.get().strip() for k, v in self.col_vars.items()}
-        self.run_btn.config(state="disabled")
-        self.status_lbl.config(text="Processing...")
-        self.update()
-
+    try:
+        result = process_csv(tmp_path, col)
+    finally:
         try:
-            result = process_csv(fp, col)
-        except Exception as exc:
-            messagebox.showerror("Processing Error", str(exc))
-            self.run_btn.config(state="normal")
-            self.status_lbl.config(text="")
-            return
+            os.unlink(tmp_path)
+        except OSError:
+            pass
 
-        cleaned_path = write_cleaned_csv(fp, result["fieldnames"], result["processed_rows"])
+    # Use a temp path for naming purposes only (out_dir override handles location)
+    naming_path = str(Path(output_dir) / filename)
 
-        # Load service mapping — search order:
-        #   1. Input/ folder next to script
-        #   2. Same folder as the selected file
-        #   3. Script folder itself
-        service_map = {}
-        for candidate in [Path(__file__).parent / "Input" / "serviceIDs.csv",
-                          Path(fp).parent / "serviceIDs.csv",
-                          Path(__file__).parent / "serviceIDs.csv"]:
-            if candidate.exists():
-                service_map = load_service_mapping(str(candidate))
-                break
-        if not service_map:
-            messagebox.showwarning(
-                "Service Mapping Not Found",
-                "serviceIDs.csv was not found.\n"
-                "Output will not be split by service — all rows go to 'unknown'.",
-            )
+    cleaned_path = write_cleaned_csv(naming_path, result["fieldnames"], result["processed_rows"], out_dir=output_dir)
 
-        # Split first so we get row_map, then translate row numbers before writing report
-        split_result = write_split_csvs(fp, col, result["processed_rows"], service_map)
-        _translate_error_rows(result["errors"], split_result["row_map"])
+    # Load service mapping from bytes
+    service_map: dict = {}
+    if service_ids_bytes:
+        text = service_ids_bytes.decode("utf-8-sig", errors="replace")
+        import csv as _csv
+        reader = _csv.DictReader(io.StringIO(text))
+        for row in reader:
+            qk_id = row.get("QKServiceID", "").strip()
+            xplor_id = row.get("Xplor Service ID", "").strip()
+            name = row.get("Service Name", "").strip()
+            if qk_id:
+                service_map[qk_id] = {"xplor_id": xplor_id, "name": name}
 
-        error_path = write_error_report(fp, result["errors"])
+    split_result = write_split_csvs(naming_path, col, result["processed_rows"], service_map, out_dir=output_dir)
+    _translate_error_rows(result["errors"], split_result["row_map"])
+    error_path = write_error_report(naming_path, result["errors"], out_dir=output_dir)
 
-        self.run_btn.config(state="normal")
-        self.status_lbl.config(text="Done ✓")
-        self._display_results(result, cleaned_path, error_path, split_result)
-
-    # ── Display ──────────────────────────────────────────────────────────────
-
-    def _display_results(self, result: dict, cleaned_path: str, error_path: str,
-                         split_result: dict = None):
-        self._clear_results()
-        stats = result["stats"]
-        errors = result["errors"]
-
-        def ln(text="", tag=""):
-            self._append(text + "\n", tag)
-
-        # ── Header ────────────────────────────────────────────────────────
-        ln("═" * 76, "header")
-        ln("  PAYMENT PLAN IMPORT CHECKER  —  Results", "header")
-        ln(f"  {datetime.now().strftime('%d/%m/%Y  %H:%M:%S')}  |  {Path(self.filepath.get()).name}", "dim")
-        ln("═" * 76, "header")
-        ln()
-
-        # ── Fix stats ─────────────────────────────────────────────────────
-        ln("  FIXES APPLIED", "header")
-        ln(f"  Total rows processed    : {stats['total']:,}", "ok")
-        ln(f"  Date format fixed       : {stats['date_fixed']:,}", "ok")
-        ln(f"  Weekday abbreviated     : {stats['weekday_fixed']:,}", "ok")
-        ln(f"  Trailing spaces removed : {stats['spaces_fixed']:,}", "ok")
-        ln()
-
-        # ── Error summary (maps to Onboarding Tool error keys) ────────────
-        DISPLAY = [
-            ("weekend", "*** WEEKEND (Sat/Sun)            ", "weekend"),
-            ("missing_date", "ERROR_MISSING_BOOKING_START_DATE ", "error"),
-            ("missing_weekday", "ERROR_MISSING_PAYMENT_DAY        ", "error"),
-            ("missing_parent", "ERROR_MISSING_GUARDIAN           ", "error"),
-            ("missing_service_id", "ERROR_MISSING_SERVICE_ID         ", "error"),
-            ("invalid_cycle", "ERROR_INVALID_FREQUENCY          ", "error"),
-            ("manual_not_monday", "Manual Plan — Not Monday         ", "orange"),
-            ("negative_limit", "ERROR_NEGATIVE_DIRECT_DEBIT_LIMIT", "error"),
-            ("negative_fixed", "ERROR_NEGATIVE_FIXED_LIMIT       ", "error"),
-            ("both_amounts", "ERROR_ONLY_ONE_AMOUNT_ALLOWED    ", "error"),
-            ("unparseable_date", "Unparseable Date                 ", "warn"),
-            ("unknown_weekday", "Unknown Weekday Value            ", "warn"),
-        ]
-
-        total_err = sum(len(errors.get(k, [])) for k, *_ in DISPLAY)
-
-        ln("  ERROR SUMMARY  (matches Onboarding Tool error keys)", "header")
-        for key, label, tag in DISPLAY:
-            n = len(errors.get(key, []))
-            t = tag if n else "ok"
-            ln(f"  {label}: {n}", t)
-        ln(f"  {'─' * 42}", "dim")
-        ln(f"  {'Total errors':<43}: {total_err}", "error" if total_err else "ok")
-        ln()
-
-        # ── Detail sections ───────────────────────────────────────────────
-
-        def section(key, title, tag, body_fn):
-            items = errors.get(key, [])
-            if not items:
-                return
-            ln("─" * 76, tag)
-            ln(f"  {title}  ({len(items)} rows)", tag)
-            ln("─" * 76, tag)
-            for e in items:
-                body_fn(e)
-            ln()
-
-        def row_line(e, extra=""):
-            ln(f"  Row {e['row']:>5}  ParentID={e['parent_id']}  ChildID={e['child_id']}", "warn")
-            ln(f"          {e['parent_name']}", "warn")
-            ln(f"          Service : {e['service']}", "dim")
-            if extra:
-                ln(f"          {extra}", "error")
-
-        # Weekend
-        def _show_weekend(e):
-            day_name = "Sunday" if e["weekday"] == "Sun" else "Saturday"
-            ln(f"  Row {e['row']:>5}  [{e['weekday']}]  ParentID={e['parent_id']}  ChildID={e['child_id']}", "weekend")
-            ln(f"          {e['parent_name']}", "weekend")
-            ln(f"          Service : {e['service']}", "dim")
-            ln(f"          Date    : {e['date']}  ← Falls on a {day_name}", "weekend")
-            ln()
-
-        section("weekend", "*** WEEKEND ERRORS — Must verify before importing! ***", "weekend", _show_weekend)
-
-        # Missing Start Date
-        section("missing_date", "ERROR_MISSING_BOOKING_START_DATE", "error",
-                lambda e: (row_line(e, f"Weekday={e.get('weekday', '')}  Date=(empty)"), ln()))
-
-        # Missing Weekday
-        section("missing_weekday", "ERROR_MISSING_PAYMENT_DAY", "error",
-                lambda e: (row_line(e, f"Date={e.get('date', '')}  Weekday=(empty)"), ln()))
-
-        # Missing Parent
-        section(
-            "missing_parent",
-            "ERROR_MISSING_GUARDIAN",
-            "error",
-            lambda e: (
-                row_line(
-                    e,
-                    f"First:\"{
-                        e.get(
-                            'first_name',
-                            '')}\"  Last:\"{
-                        e.get(
-                            'last_name',
-                            '')}\""),
-                ln()))
-
-        # Missing Service ID
-        section("missing_service_id", "ERROR_MISSING_SERVICE_ID", "error",
-                lambda e: (row_line(e, "Service ID is empty"), ln()))
-
-        # Invalid Cycle
-        section("invalid_cycle", "ERROR_INVALID_FREQUENCY  (must be Weekly / Fortnightly / Monthly)", "error",
-                lambda e: (row_line(e, f"Billing Cycle value: \"{e.get('value', '')}\""), ln()))
-
-        # Manual not Monday
-        section(
-            "manual_not_monday",
-            "Manual (Paused) Plan — Start Date Must Be Monday",
-            "orange",
-            lambda e: (
-                row_line(
-                    e,
-                    f"Start Date {
-                        e.get(
-                            'date',
-                            '')} is a {
-                        e.get(
-                            'day',
-                            '')} — must be Monday"),
-                ln()))
-
-        # Negative Limit
-        section("negative_limit", "ERROR_NEGATIVE_DIRECT_DEBIT_LIMIT", "error",
-                lambda e: (row_line(e, f"Direct Debit Limit = {e.get('value', '')}"), ln()))
-
-        # Negative Fixed
-        section("negative_fixed", "ERROR_NEGATIVE_FIXED_LIMIT", "error",
-                lambda e: (row_line(e, f"Fixed Amount = {e.get('value', '')}"), ln()))
-
-        # Both amounts
-        section(
-            "both_amounts",
-            "ERROR_ONLY_ONE_AMOUNT_ALLOWED",
-            "error",
-            lambda e: (
-                row_line(
-                    e,
-                    f"Limit={
-                        e.get(
-                            'limit',
-                            '')}  AND  Fixed={
-                        e.get(
-                            'fixed',
-                            '')}  (only one allowed)"),
-                ln()))
-
-        # Unparseable date
-        section("unparseable_date", "Unparseable Date Values", "warn",
-                lambda e: (ln(f"  Row {e['row']:>5}  \"{e['value']}\"  — {e['parent_name']}", "warn"), ln()))
-
-        # Unknown weekday
-        section("unknown_weekday", "Unknown Weekday Values", "warn",
-                lambda e: (ln(f"  Row {e['row']:>5}  \"{e['value']}\"  — {e['parent_name']}", "warn"), ln()))
-
-        # All clear
-        if total_err == 0:
-            ln("  ✓ No errors found — ready to import!", "ok")
-            ln()
-
-        # Output files
-        ln("─" * 76, "dim")
-        ln("  OUTPUT FILES", "header")
-        ln(f"  Cleaned CSV   : {cleaned_path}", "path")
-        ln(f"  Error Report  : {error_path}", "path")
-
-        if split_result:
-            known = split_result.get("known", {})
-            unknown = split_result.get("unknown", {})
-
-            if known:
-                ln()
-                ln(f"  SPLIT FILES — by Service  ({len(known)} service(s))", "header")
-                for svc_name, path in sorted(known.items()):
-                    ln(f"  ✓  {svc_name}", "ok")
-                    ln(f"       {path}", "path")
-
-            if unknown:
-                ln()
-                ln(f"  UNKNOWN / UNMAPPED Service IDs  ({len(unknown)} group(s))", "warn")
-                for sid, path in sorted(unknown.items()):
-                    ln(f"  ⚠  Service ID: {sid}", "warn")
-                    ln(f"       {path}", "path")
-
-        ln("─" * 76, "dim")
-
-        self.results.see("1.0")
+    return {
+        "result": result,
+        "cleaned_path": cleaned_path,
+        "error_path": error_path,
+        "split_result": split_result,
+        "col": col,
+    }
 
 
 # ─────────────────────────── Entry point ────────────────────────────────────
 
 if __name__ == "__main__":
-    app = App()
-    app.mainloop()
+    import sys
+
+    if len(sys.argv) < 4:
+        print("Usage: python payment_plan_checker.py <input.csv> <serviceIDs.csv> <output_dir>")
+        sys.exit(1)
+
+    input_path = sys.argv[1]
+    svc_path = sys.argv[2]
+    out_dir = sys.argv[3]
+
+    input_bytes = Path(input_path).read_bytes()
+    svc_bytes = Path(svc_path).read_bytes()
+
+    result_dict = run_payment_plan_checker(input_bytes, Path(input_path).name, svc_bytes, out_dir)
+    stats = result_dict["result"]["stats"]
+    errors = result_dict["result"]["errors"]
+    total_err = sum(len(v) for v in errors.values())
+
+    print(f"Rows processed   : {stats['total']}")
+    print(f"Date fixed       : {stats['date_fixed']}")
+    print(f"Weekday fixed    : {stats['weekday_fixed']}")
+    print(f"Spaces stripped  : {stats['spaces_fixed']}")
+    print(f"Total errors     : {total_err}")
+    print(f"Cleaned CSV      : {result_dict['cleaned_path']}")
+    print(f"Error report     : {result_dict['error_path']}")

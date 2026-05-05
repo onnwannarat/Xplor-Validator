@@ -281,8 +281,11 @@ def parse_date(series: pd.Series) -> pd.Series:
     return result.dt.strftime("%d/%m/%Y")
 
 
-def load_service_mapping(path: str) -> dict:
-    """Return {QKServiceID (str): (xplor_id (str), service_name (str))}."""
+def load_service_mapping(path) -> dict:
+    """Return {QKServiceID (str): (xplor_id (str), service_name (str))}.
+
+    path may be a file path string or a file-like object (e.g. io.StringIO).
+    """
     df = pd.read_csv(path, dtype=str).dropna(subset=["QKServiceID", "Xplor Service ID"])
     df["QKServiceID"]       = df["QKServiceID"].str.strip()
     df["Xplor Service ID"]  = df["Xplor Service ID"].str.strip()
@@ -725,10 +728,231 @@ def detect_recurring_schedule_overlaps(
 
 
 # ─────────────────────────────────────────────
-# MAIN
+# Service mapping — bytes variant
 # ─────────────────────────────────────────────
 
-def main():
+def load_service_mapping_bytes(data: bytes) -> dict:
+    """Like load_service_mapping() but reads from in-memory bytes."""
+    import io as _io
+    return load_service_mapping(_io.StringIO(data.decode("utf-8-sig", errors="replace")))
+
+
+# ─────────────────────────────────────────────
+# Save split CSVs by service (shared by both main variants)
+# ─────────────────────────────────────────────
+
+def save_by_service(
+    df: pd.DataFrame,
+    xplor_id_to_name: dict,
+    target_dir: str,
+    file_suffix: str,
+) -> list[tuple[str, int]]:
+    """Write per-service CSVs to target_dir and return [(filename, row_count)]."""
+    files: list[tuple[str, int]] = []
+    if df.empty:
+        return files
+    for xplor_id, group in df.groupby("ServiceID", sort=True):
+        xplor_id_str = str(xplor_id).strip()
+        if not xplor_id_str:
+            filename = f"UNMAPPED_{file_suffix}.csv"
+        else:
+            svc_name  = xplor_id_to_name.get(xplor_id_str, xplor_id_str)
+            safe_name = sanitize_filename(svc_name)
+            filename  = f"{safe_name}_{file_suffix}.csv"
+        group.to_csv(os.path.join(target_dir, filename), index=False, encoding="utf-8-sig")
+        files.append((filename, len(group)))
+    return files
+
+
+# ─────────────────────────────────────────────
+# MAIN (Streamlit-friendly: accepts bytes)
+# ─────────────────────────────────────────────
+
+def main(
+    input_files: list[tuple[str, bytes]],
+    service_ids_bytes: bytes,
+    output_dir: str,
+) -> dict:
+    """Process booking files and write output CSVs + reports to output_dir.
+
+    Parameters
+    ----------
+    input_files:
+        List of (filename, file_bytes) for each booking CSV/XLSX.
+    service_ids_bytes:
+        Raw bytes of serviceIDs.csv.
+    output_dir:
+        Absolute path to the destination folder.  Sub-folders Recurring/ and
+        Casual/ will be created inside it.
+
+    Returns
+    -------
+    dict with keys:
+        n_input_files, n_raw_rows, n_dupe_rows, n_dupe_groups,
+        n_sched_conflict_rows, n_sched_conflict_groups,
+        n_recurring, n_casual, n_casual_removed,
+        unmapped_ids (set), recurring_files, casual_files,
+        output_files (list of all saved paths)
+    """
+    import io as _io
+
+    os.makedirs(output_dir, exist_ok=True)
+
+    # 2. Load service mapping
+    service_map      = load_service_mapping_bytes(service_ids_bytes)
+    xplor_id_to_name = {v[0]: v[1] for v in service_map.values()}
+
+    # 3. Load ALL files into one combined DataFrame (pre-transformation)
+    RAW_COLS = list(COLUMN_MAP.keys())
+    raw_frames: list[pd.DataFrame] = []
+    for filename, file_bytes in input_files:
+        ext = os.path.splitext(filename)[1].lower()
+        if ext in (".xlsx", ".xls"):
+            raw = pd.read_excel(_io.BytesIO(file_bytes), dtype=str)
+        else:
+            raw = pd.read_csv(_io.BytesIO(file_bytes), dtype=str)
+        for col in RAW_COLS:
+            if col not in raw.columns:
+                raw[col] = ""
+        raw_frames.append(raw[RAW_COLS])
+
+    if not raw_frames:
+        return {"error": "No readable rows found in the uploaded files."}
+
+    df_raw_all = pd.concat(raw_frames, ignore_index=True).fillna("")
+
+    # 4. Duplicate detection → duplicate_bookings_report.xlsx
+    df_raw_clean, n_dupe_rows, n_dupe_groups, dup_wb, dup_report_path = \
+        detect_duplicates_and_report(df_raw_all, output_dir)
+
+    # 5. Transform de-duplicated raw data into template format
+    df_all, all_unmapped = process_df(df_raw_clean, service_map)
+
+    # 6. Separate recurring and casual bookings
+    is_casual_mask = df_all["WeekType"].str.upper() == "CASUAL"
+    df_recurring   = df_all[~is_casual_mask].reset_index(drop=True)
+    df_casual      = df_all[is_casual_mask].reset_index(drop=True)
+
+    # 6b. Detect recurring schedule overlaps
+    df_recurring, df_recurring_conflicts = detect_recurring_schedule_overlaps(df_recurring)
+    n_sched_conflict_rows   = len(df_recurring_conflicts)
+    n_sched_conflict_groups = (
+        df_recurring_conflicts.groupby(["ServiceID", "Child_Legacy_Id"]).ngroups
+        if n_sched_conflict_rows else 0
+    )
+
+    _add_schedule_overlap_sheet(dup_wb, df_recurring_conflicts)
+    dup_wb.save(dup_report_path)
+
+    # 7. Remove casual bookings that overlap with recurring bookings
+    removed_count = 0
+    df_removed    = pd.DataFrame(columns=TEMPLATE_COLUMNS)
+    if not df_recurring.empty and not df_casual.empty:
+        overlap_results = detect_casual_overlaps(df_casual, df_recurring)
+        overlap_mask    = pd.Series([r[0] for r in overlap_results], index=df_casual.index)
+        reasons         = [r[1] for r in overlap_results]
+
+        removed_count  = int(overlap_mask.sum())
+        df_removed     = df_casual[overlap_mask].copy()
+        df_removed["OverlapReason"] = [
+            reason for reason, flag in zip(reasons, overlap_mask) if flag
+        ]
+        df_casual = df_casual[~overlap_mask].reset_index(drop=True)
+
+    # 8. Sort
+    df_recurring = df_recurring.sort_values(["ServiceID", "Child_Legacy_Id"]).reset_index(drop=True)
+    df_casual    = df_casual.sort_values(["ServiceID", "Child_Legacy_Id"]).reset_index(drop=True)
+
+    # 11. Create Output sub-folders
+    recurring_dir = os.path.join(output_dir, "Recurring")
+    casual_dir    = os.path.join(output_dir, "Casual")
+    os.makedirs(recurring_dir, exist_ok=True)
+    os.makedirs(casual_dir,    exist_ok=True)
+
+    output_files: list[str] = [dup_report_path]
+
+    # 12. Save removed-overlap report
+    if not df_removed.empty:
+        df_removed_sorted = df_removed.sort_values(["ServiceID", "Child_Legacy_Id"]).reset_index(drop=True)
+        report_cols = TEMPLATE_COLUMNS + ["OverlapReason"]
+
+        wb = Workbook()
+        ws = wb.active
+        assert ws is not None
+        ws.title = "Removed Casual Bookings"
+        ws.append(report_cols)
+        _style_header(ws)
+
+        for _, row in df_removed_sorted.iterrows():
+            values = [row.get(c, "") for c in report_cols]
+            _write_row(ws, values, fill=REMOVED_FILL)
+
+        _auto_width(ws)
+        ws.freeze_panes = "A2"
+
+        _add_notes_sheet(wb, [
+            ("REMOVED CASUAL BOOKINGS REPORT", ""),
+            ("", ""),
+            ("Why were these rows removed?",
+             "Each casual booking in this report conflicts with an existing recurring booking "
+             "for the same child. The casual booking falls on a day that is already covered "
+             "by the recurring pattern (same room, same day-of-week, within the recurring "
+             "date range). Uploading it would place two bookings in the same room slot."),
+            ("", ""),
+            ("OVERLAP CONDITIONS", ""),
+            ("Conditions 1–5 must all be true",
+             "1. Same child (Child_Legacy_Id)  "
+             "2. Same service (ServiceID)  "
+             "3. Same room (ImportedRoom)  "
+             "4. Casual date falls within the recurring booking's Start–End Date range  "
+             "5. Casual date's weekday is a booked day in the recurring pattern "
+             "(for Fortnightly: checked against the correct Week 1 or Week 2 column; "
+             "for Weekly and other frequencies: checked against Week 1 columns only)"),
+            ("", ""),
+            ("ACTION REQUIRED", ""),
+            ("If removal looks correct",
+             "No action needed. The row is already excluded from the Casual import files."),
+            ("If removal looks incorrect",
+             "The casual booking may be a genuinely different session. "
+             "Verify with the service and, if needed, re-add it manually after the "
+             "recurring import is complete."),
+            ("", ""),
+            ("Total casual bookings removed", str(len(df_removed_sorted))),
+        ])
+
+        overlap_report_path = os.path.join(output_dir, f"removed_overlap_report_{TODAY}.xlsx")
+        wb.save(overlap_report_path)
+        output_files.append(overlap_report_path)
+
+    # 13. Save import CSVs split by service
+    recurring_files = save_by_service(df_recurring, xplor_id_to_name, recurring_dir, f"bookings_import_{TODAY}")
+    casual_files    = save_by_service(df_casual,    xplor_id_to_name, casual_dir,    f"casualbookings_import_{TODAY}")
+
+    output_files += [os.path.join(recurring_dir, f) for f, _ in recurring_files]
+    output_files += [os.path.join(casual_dir,    f) for f, _ in casual_files]
+
+    return {
+        "n_input_files":           len(input_files),
+        "n_raw_rows":              len(df_raw_all),
+        "n_dupe_rows":             n_dupe_rows,
+        "n_dupe_groups":           n_dupe_groups,
+        "n_sched_conflict_rows":   n_sched_conflict_rows,
+        "n_sched_conflict_groups": n_sched_conflict_groups,
+        "n_recurring":             len(df_recurring),
+        "n_casual":                len(df_casual),
+        "n_casual_removed":        removed_count,
+        "unmapped_ids":            all_unmapped,
+        "recurring_files":         recurring_files,
+        "casual_files":            casual_files,
+        "output_files":            output_files,
+    }
+
+
+# ─────────────────────────────────────────────
+# CLI fallback (reads from the original Input/ folder structure)
+# ─────────────────────────────────────────────
+
+def _main_cli():
     # 1. Find all source files in the Input folder
     os.makedirs(INPUT_DIR, exist_ok=True)
     pattern = os.path.join(INPUT_DIR, "*.csv")
@@ -743,27 +967,48 @@ def main():
     for m in matches:
         print(f"  - {os.path.basename(m)}")
 
-    # 2. Load service mapping
-    service_map      = load_service_mapping(SERVICE_IDS_FILE)
-    xplor_id_to_name = {v[0]: v[1] for v in service_map.values()}
-    print(f"\nService mapping loaded : {len(service_map)} services from serviceIDs.csv")
+    # Build input_files list
+    input_files = [(os.path.basename(m), open(m, "rb").read()) for m in matches]
+    service_ids_bytes = open(SERVICE_IDS_FILE, "rb").read()
 
-    # 3. Load ALL raw CSVs into one combined DataFrame (pre-transformation)
-    # Normalise every file to the same column set (COLUMN_MAP source columns)
-    # so that pd.concat stacks rows vertically instead of spreading horizontally.
-    RAW_COLS = list(COLUMN_MAP.keys())
-    raw_frames: list[pd.DataFrame] = []
-    for source_file in matches:
-        print(f"\nReading : {os.path.basename(source_file)}")
-        raw = pd.read_csv(source_file, dtype=str)
-        # Keep only known source columns; add any missing ones as empty strings
-        for col in RAW_COLS:
-            if col not in raw.columns:
-                raw[col] = ""
-        raw_frames.append(raw[RAW_COLS])
-        print(f"  {len(raw)} rows")
-    df_raw_all = pd.concat(raw_frames, ignore_index=True).fillna("")
-    print(f"\nTotal raw rows : {len(df_raw_all)}")
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+    result = main(input_files, service_ids_bytes, OUTPUT_DIR)
+
+    if "error" in result:
+        print(f"ERROR: {result['error']}")
+        return
+
+    print(f"\nService mapping loaded : {len(result['unmapped_ids'])} unmapped IDs" if result["unmapped_ids"] else "")
+    print()
+    print("=" * 60)
+    print("  SUMMARY")
+    print("=" * 60)
+    print(f"  Total input files processed : {result['n_input_files']}")
+    print(f"  Raw rows loaded             : {result['n_raw_rows']}")
+    if result["n_dupe_rows"]:
+        print(f"  Exact duplicates removed    : {result['n_dupe_rows']} ({result['n_dupe_groups']} groups)")
+    if result["n_sched_conflict_rows"]:
+        print(f"  Recurring sched. conflicts  : {result['n_sched_conflict_rows']} rows removed")
+    print(f"  Recurring bookings          : {result['n_recurring']}")
+    print(f"  Casual bookings kept        : {result['n_casual']}")
+    if result["n_casual_removed"]:
+        print(f"  Casual bookings removed     : {result['n_casual_removed']} (overlap with recurring)")
+    if result["unmapped_ids"]:
+        print()
+        print("-" * 55)
+        print("  WARNING: unmapped QK Service Legacy IDs:")
+        for uid in sorted(result["unmapped_ids"]):
+            print(f"    >> {uid}")
+        print("-" * 55)
+    print()
+    print(f"  Output/Recurring/  ({len(result['recurring_files'])} files)")
+    for fname, row_count in sorted(result["recurring_files"]):
+        print(f"    [OK]  {fname}  ({row_count} rows)")
+    print()
+    print(f"  Output/Casual/  ({len(result['casual_files'])} files)")
+    for fname, row_count in sorted(result["casual_files"]):
+        print(f"    [OK]  {fname}  ({row_count} rows)")
+    print("=" * 60)
 
     # 4. Duplicate detection (Raj's logic) → duplicate_bookings_report.xlsx
     os.makedirs(OUTPUT_DIR, exist_ok=True)
@@ -979,4 +1224,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    _main_cli()

@@ -38,7 +38,7 @@ SERVICE_IDS_PATH = os.path.join(INPUT_DIR, "serviceIDs.csv")
 
 
 def load_service_names(service_ids_path):
-    """Return a set of valid Service Names from serviceIDs.csv."""
+    """Return a set of valid Service Names from serviceIDs.csv path."""
     service_names = set()
     with open(service_ids_path, newline="", encoding="utf-8-sig") as f:
         reader = csv.DictReader(f)
@@ -46,6 +46,18 @@ def load_service_names(service_ids_path):
             name = row.get("Service Name", "").strip()
             if name:
                 service_names.add(name)
+    return service_names
+
+
+def load_service_names_bytes(data: bytes) -> set:
+    """Return a set of valid Service Names from serviceIDs.csv bytes."""
+    import io as _io
+    service_names = set()
+    reader = csv.DictReader(_io.StringIO(data.decode("utf-8-sig", errors="replace")))
+    for row in reader:
+        name = row.get("Service Name", "").strip()
+        if name:
+            service_names.add(name)
     return service_names
 
 
@@ -60,6 +72,10 @@ def find_input_files(input_dir):
     return files
 
 
+def _is_html_bytes(data: bytes) -> bool:
+    return b"<" in data[:512] and b">" in data[:512]
+
+
 def _is_html_file(filepath):
     """Peek at the first 512 bytes to detect HTML disguised as .xls."""
     with open(filepath, "rb") as f:
@@ -67,23 +83,37 @@ def _is_html_file(filepath):
     return b"<" in header and b">" in header
 
 
+def read_input_bytes(filename: str, data: bytes) -> pd.DataFrame:
+    """Read a file from bytes into a DataFrame with normalised column names."""
+    import io as _io
+    ext = os.path.splitext(filename)[1].lower()
+
+    if ext == ".csv":
+        df = pd.read_csv(_io.BytesIO(data), dtype=str)
+    elif ext in (".xlsx", ".xls") and _is_html_bytes(data):
+        tables = pd.read_html(_io.BytesIO(data))
+        df = tables[0].astype(str)
+    elif ext == ".xlsx":
+        df = pd.read_excel(_io.BytesIO(data), engine="openpyxl", dtype=str)
+    else:
+        df = pd.read_excel(_io.BytesIO(data), engine="xlrd", dtype=str)
+
+    df.columns = [c.strip() for c in df.columns]
+    return df
+
+
 def read_input_file(filepath):
-    """
-    Read an input file into a DataFrame with normalised column names.
-    Handles true .xlsx/.xls, HTML-exported .xls, and .csv.
-    """
+    """Read an input file into a DataFrame with normalised column names."""
     ext = os.path.splitext(filepath)[1].lower()
 
     if ext == ".csv":
         df = pd.read_csv(filepath, dtype=str)
     elif ext in (".xlsx", ".xls") and _is_html_file(filepath):
-        # HTML table exported with an Excel extension
         tables = pd.read_html(filepath)
         df = tables[0].astype(str)
     elif ext == ".xlsx":
         df = pd.read_excel(filepath, engine="openpyxl", dtype=str)
     else:
-        # True binary .xls — requires xlrd
         df = pd.read_excel(filepath, engine="xlrd", dtype=str)
 
     df.columns = [c.strip() for c in df.columns]
@@ -211,74 +241,137 @@ def write_output(centre_name, rows_df, template_wb, output_dir):
     return out_path
 
 
-def main():
-    os.makedirs(OUTPUT_DIR, exist_ok=True)
+def _process_input_df(
+    df: pd.DataFrame,
+    filename: str,
+    service_names: set,
+    template_wb,
+    output_dir: str,
+) -> tuple[int, int, set, list[dict]]:
+    """Process one input DataFrame and write per-centre output files.
 
-    service_names = load_service_names(SERVICE_IDS_PATH)
-    print(f"Loaded {len(service_names)} service names from serviceIDs.csv")
+    Returns (total_outputs, total_rows, skipped_centres, created_files).
+    created_files is a list of {"centre": str, "path": str, "rows": int}.
+    """
+    centre_col = next(
+        (c for c in df.columns if c.lower().replace(" ", "") in ("centername", "centrename")),
+        None,
+    )
+    if centre_col is None or "Account Name" not in df.columns:
+        return 0, 0, set(), []
 
-    input_files = find_input_files(INPUT_DIR)
-    if not input_files:
-        print("No input data files found in the input folder.")
-        sys.exit(0)
+    df[centre_col] = df[centre_col].fillna("").str.strip()
+    df = df[~df["Account Name"].str.contains("demo parent", case=False, na=False)]
 
-    template_wb = load_workbook(TEMPLATE_PATH)
+    seen_centres: list[str] = []
+    for centre_name in df[centre_col]:
+        if centre_name and centre_name not in seen_centres:
+            seen_centres.append(centre_name)
 
     total_outputs = 0
     total_rows = 0
-    skipped_centres = set()
+    skipped: set[str] = set()
+    created: list[dict] = []
 
-    for filepath in input_files:
-        print(f"\nProcessing: {os.path.basename(filepath)}")
+    for centre_name in seen_centres:
+        if centre_name not in service_names:
+            skipped.add(centre_name)
+            continue
+        group = df[df[centre_col] == centre_name]
+        out_path = write_output(centre_name, group, template_wb, output_dir)
+        row_count = len(group)
+        total_rows += row_count
+        total_outputs += 1
+        created.append({"centre": centre_name, "path": out_path, "rows": row_count})
+
+    return total_outputs, total_rows, skipped, created
+
+
+def main(
+    input_files: list[tuple[str, bytes]],
+    service_ids_bytes: bytes,
+    template_bytes: bytes,
+    output_dir: str,
+) -> dict:
+    """Process balance adjustment files and write per-centre XLSX files.
+
+    Parameters
+    ----------
+    input_files:
+        List of (filename, file_bytes).
+    service_ids_bytes:
+        Raw bytes of serviceIDs.csv.
+    template_bytes:
+        Raw bytes of the Balance Adjustments template XLSX.
+    output_dir:
+        Destination folder for all output files.
+
+    Returns
+    -------
+    dict with keys: total_outputs, total_rows, skipped_centres (set),
+    created_files (list of {centre, path, rows}), errors (list of str).
+    """
+    import io as _io
+
+    os.makedirs(output_dir, exist_ok=True)
+    service_names = load_service_names_bytes(service_ids_bytes)
+    template_wb = load_workbook(_io.BytesIO(template_bytes))
+
+    total_outputs = 0
+    total_rows = 0
+    skipped_centres: set[str] = set()
+    created_files: list[dict] = []
+    errors: list[str] = []
+
+    for filename, data in input_files:
         try:
-            df = read_input_file(filepath)
+            df = read_input_bytes(filename, data)
         except Exception as exc:
-            print(f"  ERROR reading file: {exc}")
+            errors.append(f"{filename}: {exc}")
             continue
 
-        # Find center name column (flexible naming)
-        centre_col = next(
-            (c for c in df.columns if c.lower().replace(" ", "") in ("centername", "centrename")),
-            None,
+        n_out, n_rows, skipped, created = _process_input_df(
+            df, filename, service_names, template_wb, output_dir
         )
-        if centre_col is None:
-            print(f"  ERROR: No 'Center Name' column found. Columns: {list(df.columns)}")
-            continue
-        if "Account Name" not in df.columns:
-            print(f"  ERROR: No 'Account Name' column found. Columns: {list(df.columns)}")
-            continue
+        total_outputs += n_out
+        total_rows += n_rows
+        skipped_centres |= skipped
+        created_files.extend(created)
 
-        df[centre_col] = df[centre_col].fillna("").str.strip()
+    return {
+        "total_outputs": total_outputs,
+        "total_rows": total_rows,
+        "skipped_centres": skipped_centres,
+        "created_files": created_files,
+        "errors": errors,
+    }
 
-        # Remove demo/test accounts
-        before = len(df)
-        df = df[~df["Account Name"].str.contains("demo parent", case=False, na=False)]
-        removed = before - len(df)
-        if removed:
-            print(f"  Removed {removed} 'demo parent' row(s)")
 
-        # Preserve original row order within each group
-        seen_centres = []
-        for centre_name in df[centre_col]:
-            if centre_name and centre_name not in seen_centres:
-                seen_centres.append(centre_name)
+def _main_cli():
+    """CLI entry point using the original folder-based paths."""
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-        for centre_name in seen_centres:
-            if centre_name not in service_names:
-                skipped_centres.add(centre_name)
-                continue
+    input_file_paths = find_input_files(INPUT_DIR)
+    if not input_file_paths:
+        print("No input data files found in the input folder.")
+        sys.exit(0)
 
-            group = df[df[centre_col] == centre_name]
-            out_path = write_output(centre_name, group, template_wb, OUTPUT_DIR)
-            row_count = len(group)
-            total_rows += row_count
-            total_outputs += 1
-            print(f"  Created: {os.path.basename(out_path)}  ({row_count} row{'s' if row_count != 1 else ''})")
+    input_files = [(os.path.basename(p), open(p, "rb").read()) for p in input_file_paths]
+    service_ids_bytes = open(SERVICE_IDS_PATH, "rb").read()
+    template_bytes = open(TEMPLATE_PATH, "rb").read()
 
-    print(f"\nDone. {total_outputs} output file(s) created, {total_rows} data row(s) written.")
-    if skipped_centres:
-        print(f"Skipped {len(skipped_centres)} centre(s) not in serviceIDs.csv.")
+    result = main(input_files, service_ids_bytes, template_bytes, OUTPUT_DIR)
+
+    print(f"Done. {result['total_outputs']} output file(s) created, {result['total_rows']} data row(s) written.")
+    for cf in result["created_files"]:
+        print(f"  Created: {os.path.basename(cf['path'])}  ({cf['rows']} rows)")
+    if result["skipped_centres"]:
+        print(f"Skipped {len(result['skipped_centres'])} centre(s) not in serviceIDs.csv:")
+        for c in sorted(result["skipped_centres"]):
+            print(f"  - {c}")
+    for err in result["errors"]:
+        print(f"ERROR: {err}")
 
 
 if __name__ == "__main__":
-    main()
+    _main_cli()

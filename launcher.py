@@ -53,7 +53,7 @@ def find_free_port(start: int = 8501) -> int:
 
 def get_app_path() -> str:
     """
-    Returns the absolute path to app.py.
+    Returns the absolute path to Home.py.
 
     When running inside a PyInstaller bundle, data files are extracted to a
     temporary directory referenced by sys._MEIPASS.
@@ -62,9 +62,9 @@ def get_app_path() -> str:
     """
     if hasattr(sys, "_MEIPASS"):
         # Running from a PyInstaller bundle
-        return os.path.join(sys._MEIPASS, "app.py")
+        return os.path.join(sys._MEIPASS, "Home.py")
     # Running from source
-    return os.path.join(os.path.dirname(os.path.abspath(__file__)), "app.py")
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), "Home.py")
 
 
 def open_browser(url: str, delay: float = 6.0) -> None:
@@ -82,9 +82,9 @@ def main() -> None:
     url      = f"http://localhost:{port}"
     app_path = get_app_path()
 
-    # Validate that app.py was found — gives a clear error if the bundle is broken
+    # Validate that Home.py was found — gives a clear error if the bundle is broken
     if not os.path.exists(app_path):
-        print(f"ERROR: Could not find app.py at: {app_path}")
+        print(f"ERROR: Could not find Home.py at: {app_path}")
         print("The application bundle may be corrupted. Please re-download.")
         input("Press Enter to exit…")
         sys.exit(1)
@@ -93,7 +93,7 @@ def main() -> None:
     threading.Thread(target=open_browser, args=(url,), daemon=True).start()
 
     print("=" * 60)
-    print("  Xplor Data Migration Validator")
+    print("  Xplor Data Migration Tools")
     print("=" * 60)
     print(f"  Starting server on {url}")
     print(f"  Your browser will open automatically in a few seconds.")
