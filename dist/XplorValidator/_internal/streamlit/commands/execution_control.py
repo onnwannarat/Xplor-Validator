@@ -37,7 +37,7 @@ if TYPE_CHECKING:
 
 
 @gather_metrics("stop")
-def stop() -> NoReturn:  # type: ignore[misc] # ty: ignore[invalid-return-type]
+def stop() -> NoReturn:  # type: ignore[misc]
     """Stops execution immediately.
 
     Streamlit will not run any statements after `st.stop()`.

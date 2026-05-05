@@ -24,8 +24,9 @@ from typing import (
 
 from streamlit.elements.lib.form_utils import current_form_id
 from streamlit.elements.lib.layout_utils import (
+    LayoutConfig,
     Width,
-    create_layout_config,
+    validate_width,
 )
 from streamlit.elements.lib.policies import check_widget_policies
 from streamlit.elements.lib.utils import (
@@ -276,7 +277,8 @@ class FeedbackMixin:
             )
 
         key = to_key(key)
-        layout_config = create_layout_config(width=width, allow_content_width=True)
+        validate_width(width, allow_content=True)
+        layout_config = LayoutConfig(width=width)
 
         check_widget_policies(self.dg, key, on_change, default_value=default)
 

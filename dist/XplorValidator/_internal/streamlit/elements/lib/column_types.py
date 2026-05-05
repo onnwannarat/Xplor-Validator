@@ -431,36 +431,28 @@ def Column(
 
     Examples
     --------
-    .. code-block:: python
-        :filename: streamlit_app.py
-
-        import pandas as pd
-        import streamlit as st
-
-        data_df = pd.DataFrame(
-            {
-                "widgets": [
-                    "st.selectbox",
-                    "st.number_input",
-                    "st.text_area",
-                    "st.button",
-                ],
-            }
-        )
-
-        st.data_editor(
-            data_df,
-            column_config={
-                "widgets": st.column_config.Column(
-                    "Streamlit Widgets",
-                    help="Streamlit **widget** commands 🎈",
-                    width="medium",
-                    required=True,
-                )
-            },
-            hide_index=True,
-            num_rows="dynamic",
-        )
+    >>> import pandas as pd
+    >>> import streamlit as st
+    >>>
+    >>> data_df = pd.DataFrame(
+    >>>     {
+    >>>         "widgets": ["st.selectbox", "st.number_input", "st.text_area", "st.button"],
+    >>>     }
+    >>> )
+    >>>
+    >>> st.data_editor(
+    >>>     data_df,
+    >>>     column_config={
+    >>>         "widgets": st.column_config.Column(
+    >>>             "Streamlit Widgets",
+    >>>             help="Streamlit **widget** commands 🎈",
+    >>>             width="medium",
+    >>>             required=True,
+    >>>         )
+    >>>     },
+    >>>     hide_index=True,
+    >>>     num_rows="dynamic",
+    >>> )
 
     .. output::
         https://doc-column.streamlit.app/
@@ -606,32 +598,29 @@ def NumberColumn(
 
     Examples
     --------
-    .. code-block:: python
-        :filename: streamlit_app.py
-
-        import pandas as pd
-        import streamlit as st
-
-        data_df = pd.DataFrame(
-            {
-                "price": [20, 950, 250, 500],
-            }
-        )
-
-        st.data_editor(
-            data_df,
-            column_config={
-                "price": st.column_config.NumberColumn(
-                    "Price (in USD)",
-                    help="The price of the product in USD",
-                    min_value=0,
-                    max_value=1000,
-                    step=1,
-                    format="$%d",
-                )
-            },
-            hide_index=True,
-        )
+    >>> import pandas as pd
+    >>> import streamlit as st
+    >>>
+    >>> data_df = pd.DataFrame(
+    >>>     {
+    >>>         "price": [20, 950, 250, 500],
+    >>>     }
+    >>> )
+    >>>
+    >>> st.data_editor(
+    >>>     data_df,
+    >>>     column_config={
+    >>>         "price": st.column_config.NumberColumn(
+    >>>             "Price (in USD)",
+    >>>             help="The price of the product in USD",
+    >>>             min_value=0,
+    >>>             max_value=1000,
+    >>>             step=1,
+    >>>             format="$%d",
+    >>>         )
+    >>>     },
+    >>>     hide_index=True,
+    >>> )
 
     .. output::
         https://doc-number-column.streamlit.app/
@@ -744,36 +733,28 @@ def TextColumn(
 
     Examples
     --------
-    .. code-block:: python
-        :filename: streamlit_app.py
-
-        import pandas as pd
-        import streamlit as st
-
-        data_df = pd.DataFrame(
-            {
-                "widgets": [
-                    "st.selectbox",
-                    "st.number_input",
-                    "st.text_area",
-                    "st.button",
-                ],
-            }
-        )
-
-        st.data_editor(
-            data_df,
-            column_config={
-                "widgets": st.column_config.TextColumn(
-                    "Widgets",
-                    help="Streamlit **widget** commands 🎈",
-                    default="st.",
-                    max_chars=50,
-                    validate=r"^st\.[a-z_]+$",
-                )
-            },
-            hide_index=True,
-        )
+    >>> import pandas as pd
+    >>> import streamlit as st
+    >>>
+    >>> data_df = pd.DataFrame(
+    >>>     {
+    >>>         "widgets": ["st.selectbox", "st.number_input", "st.text_area", "st.button"],
+    >>>     }
+    >>> )
+    >>>
+    >>> st.data_editor(
+    >>>     data_df,
+    >>>     column_config={
+    >>>         "widgets": st.column_config.TextColumn(
+    >>>             "Widgets",
+    >>>             help="Streamlit **widget** commands 🎈",
+    >>>             default="st.",
+    >>>             max_chars=50,
+    >>>             validate=r"^st\.[a-z_]+$",
+    >>>         )
+    >>>     },
+    >>>     hide_index=True,
+    >>> )
 
     .. output::
         https://doc-text-column.streamlit.app/
@@ -906,45 +887,42 @@ def LinkColumn(
 
     Examples
     --------
-    .. code-block:: python
-        :filename: streamlit_app.py
-
-        import pandas as pd
-        import streamlit as st
-
-        data_df = pd.DataFrame(
-            {
-                "apps": [
-                    "https://roadmap.streamlit.app",
-                    "https://extras.streamlit.app",
-                    "https://issues.streamlit.app",
-                    "https://30days.streamlit.app",
-                ],
-                "creator": [
-                    "https://github.com/streamlit",
-                    "https://github.com/arnaudmiribel",
-                    "https://github.com/streamlit",
-                    "https://github.com/streamlit",
-                ],
-            }
-        )
-
-        st.data_editor(
-            data_df,
-            column_config={
-                "apps": st.column_config.LinkColumn(
-                    "Trending apps",
-                    help="The top trending Streamlit apps",
-                    validate=r"^https://[a-z]+\.streamlit\.app$",
-                    max_chars=100,
-                    display_text=r"https://(.*?)\.streamlit\.app",
-                ),
-                "creator": st.column_config.LinkColumn(
-                    "App Creator", display_text="Open profile"
-                ),
-            },
-            hide_index=True,
-        )
+    >>> import pandas as pd
+    >>> import streamlit as st
+    >>>
+    >>> data_df = pd.DataFrame(
+    >>>     {
+    >>>         "apps": [
+    >>>             "https://roadmap.streamlit.app",
+    >>>             "https://extras.streamlit.app",
+    >>>             "https://issues.streamlit.app",
+    >>>             "https://30days.streamlit.app",
+    >>>         ],
+    >>>         "creator": [
+    >>>             "https://github.com/streamlit",
+    >>>             "https://github.com/arnaudmiribel",
+    >>>             "https://github.com/streamlit",
+    >>>             "https://github.com/streamlit",
+    >>>         ],
+    >>>     }
+    >>> )
+    >>>
+    >>> st.data_editor(
+    >>>     data_df,
+    >>>     column_config={
+    >>>         "apps": st.column_config.LinkColumn(
+    >>>             "Trending apps",
+    >>>             help="The top trending Streamlit apps",
+    >>>             validate=r"^https://[a-z]+\.streamlit\.app$",
+    >>>             max_chars=100,
+    >>>             display_text=r"https://(.*?)\.streamlit\.app"
+    >>>         ),
+    >>>         "creator": st.column_config.LinkColumn(
+    >>>             "App Creator", display_text="Open profile"
+    >>>         ),
+    >>>     },
+    >>>     hide_index=True,
+    >>> )
 
     .. output::
         https://doc-link-column.streamlit.app/
@@ -1047,36 +1025,28 @@ def CheckboxColumn(
 
     Examples
     --------
-    .. code-block:: python
-        :filename: streamlit_app.py
-
-        import pandas as pd
-        import streamlit as st
-
-        data_df = pd.DataFrame(
-            {
-                "widgets": [
-                    "st.selectbox",
-                    "st.number_input",
-                    "st.text_area",
-                    "st.button",
-                ],
-                "favorite": [True, False, False, True],
-            }
-        )
-
-        st.data_editor(
-            data_df,
-            column_config={
-                "favorite": st.column_config.CheckboxColumn(
-                    "Your favorite?",
-                    help="Select your **favorite** widgets",
-                    default=False,
-                )
-            },
-            disabled=["widgets"],
-            hide_index=True,
-        )
+    >>> import pandas as pd
+    >>> import streamlit as st
+    >>>
+    >>> data_df = pd.DataFrame(
+    >>>     {
+    >>>         "widgets": ["st.selectbox", "st.number_input", "st.text_area", "st.button"],
+    >>>         "favorite": [True, False, False, True],
+    >>>     }
+    >>> )
+    >>>
+    >>> st.data_editor(
+    >>>     data_df,
+    >>>     column_config={
+    >>>         "favorite": st.column_config.CheckboxColumn(
+    >>>             "Your favorite?",
+    >>>             help="Select your **favorite** widgets",
+    >>>             default=False,
+    >>>         )
+    >>>     },
+    >>>     disabled=["widgets"],
+    >>>     hide_index=True,
+    >>> )
 
     .. output::
         https://doc-checkbox-column.streamlit.app/
@@ -1181,40 +1151,37 @@ def SelectboxColumn(
 
     Examples
     --------
-    .. code-block:: python
-        :filename: streamlit_app.py
-
-        import pandas as pd
-        import streamlit as st
-
-        data_df = pd.DataFrame(
-            {
-                "category": [
-                    "📊 Data Exploration",
-                    "📈 Data Visualization",
-                    "🤖 LLM",
-                    "📊 Data Exploration",
-                ],
-            }
-        )
-
-        st.data_editor(
-            data_df,
-            column_config={
-                "category": st.column_config.SelectboxColumn(
-                    "App Category",
-                    help="The category of the app",
-                    width="medium",
-                    options=[
-                        "📊 Data Exploration",
-                        "📈 Data Visualization",
-                        "🤖 LLM",
-                    ],
-                    required=True,
-                )
-            },
-            hide_index=True,
-        )
+    >>> import pandas as pd
+    >>> import streamlit as st
+    >>>
+    >>> data_df = pd.DataFrame(
+    >>>     {
+    >>>         "category": [
+    >>>             "📊 Data Exploration",
+    >>>             "📈 Data Visualization",
+    >>>             "🤖 LLM",
+    >>>             "📊 Data Exploration",
+    >>>         ],
+    >>>     }
+    >>> )
+    >>>
+    >>> st.data_editor(
+    >>>     data_df,
+    >>>     column_config={
+    >>>         "category": st.column_config.SelectboxColumn(
+    >>>             "App Category",
+    >>>             help="The category of the app",
+    >>>             width="medium",
+    >>>             options=[
+    >>>                 "📊 Data Exploration",
+    >>>                 "📈 Data Visualization",
+    >>>                 "🤖 LLM",
+    >>>             ],
+    >>>             required=True,
+    >>>         )
+    >>>     },
+    >>>     hide_index=True,
+    >>> )
 
     .. output::
         https://doc-selectbox-column.streamlit.app/
@@ -1319,35 +1286,32 @@ def BarChartColumn(
 
     Examples
     --------
-    .. code-block:: python
-        :filename: streamlit_app.py
-
-        import pandas as pd
-        import streamlit as st
-
-        data_df = pd.DataFrame(
-            {
-                "sales": [
-                    [0, 4, 26, 80, 100, 40],
-                    [80, 20, 80, 35, 40, 100],
-                    [10, 20, 80, 80, 70, 0],
-                    [10, 100, 20, 100, 30, 100],
-                ],
-            }
-        )
-
-        st.data_editor(
-            data_df,
-            column_config={
-                "sales": st.column_config.BarChartColumn(
-                    "Sales (last 6 months)",
-                    help="The sales volume in the last 6 months",
-                    y_min=0,
-                    y_max=100,
-                ),
-            },
-            hide_index=True,
-        )
+    >>> import pandas as pd
+    >>> import streamlit as st
+    >>>
+    >>> data_df = pd.DataFrame(
+    >>>     {
+    >>>         "sales": [
+    >>>             [0, 4, 26, 80, 100, 40],
+    >>>             [80, 20, 80, 35, 40, 100],
+    >>>             [10, 20, 80, 80, 70, 0],
+    >>>             [10, 100, 20, 100, 30, 100],
+    >>>         ],
+    >>>     }
+    >>> )
+    >>>
+    >>> st.data_editor(
+    >>>     data_df,
+    >>>     column_config={
+    >>>         "sales": st.column_config.BarChartColumn(
+    >>>             "Sales (last 6 months)",
+    >>>             help="The sales volume in the last 6 months",
+    >>>             y_min=0,
+    >>>             y_max=100,
+    >>>         ),
+    >>>     },
+    >>>     hide_index=True,
+    >>> )
 
     .. output::
         https://doc-barchart-column.streamlit.app/
@@ -1442,36 +1406,33 @@ def LineChartColumn(
 
     Examples
     --------
-    .. code-block:: python
-        :filename: streamlit_app.py
-
-        import pandas as pd
-        import streamlit as st
-
-        data_df = pd.DataFrame(
-            {
-                "sales": [
-                    [0, 4, 26, 80, 100, 40],
-                    [80, 20, 80, 35, 40, 100],
-                    [10, 20, 80, 80, 70, 0],
-                    [10, 100, 20, 100, 30, 100],
-                ],
-            }
-        )
-
-        st.data_editor(
-            data_df,
-            column_config={
-                "sales": st.column_config.LineChartColumn(
-                    "Sales (last 6 months)",
-                    width="medium",
-                    help="The sales volume in the last 6 months",
-                    y_min=0,
-                    y_max=100,
-                ),
-            },
-            hide_index=True,
-        )
+    >>> import pandas as pd
+    >>> import streamlit as st
+    >>>
+    >>> data_df = pd.DataFrame(
+    >>>     {
+    >>>         "sales": [
+    >>>             [0, 4, 26, 80, 100, 40],
+    >>>             [80, 20, 80, 35, 40, 100],
+    >>>             [10, 20, 80, 80, 70, 0],
+    >>>             [10, 100, 20, 100, 30, 100],
+    >>>         ],
+    >>>     }
+    >>> )
+    >>>
+    >>> st.data_editor(
+    >>>     data_df,
+    >>>     column_config={
+    >>>         "sales": st.column_config.LineChartColumn(
+    >>>             "Sales (last 6 months)",
+    >>>             width="medium",
+    >>>             help="The sales volume in the last 6 months",
+    >>>             y_min=0,
+    >>>             y_max=100,
+    >>>          ),
+    >>>     },
+    >>>     hide_index=True,
+    >>> )
 
     .. output::
         https://doc-linechart-column.streamlit.app/
@@ -1566,36 +1527,33 @@ def AreaChartColumn(
 
     Examples
     --------
-    .. code-block:: python
-        :filename: streamlit_app.py
-
-        import pandas as pd
-        import streamlit as st
-
-        data_df = pd.DataFrame(
-            {
-                "sales": [
-                    [0, 4, 26, 80, 100, 40],
-                    [80, 20, 80, 35, 40, 100],
-                    [10, 20, 80, 80, 70, 0],
-                    [10, 100, 20, 100, 30, 100],
-                ],
-            }
-        )
-
-        st.data_editor(
-            data_df,
-            column_config={
-                "sales": st.column_config.AreaChartColumn(
-                    "Sales (last 6 months)",
-                    width="medium",
-                    help="The sales volume in the last 6 months",
-                    y_min=0,
-                    y_max=100,
-                ),
-            },
-            hide_index=True,
-        )
+    >>> import pandas as pd
+    >>> import streamlit as st
+    >>>
+    >>> data_df = pd.DataFrame(
+    >>>     {
+    >>>         "sales": [
+    >>>             [0, 4, 26, 80, 100, 40],
+    >>>             [80, 20, 80, 35, 40, 100],
+    >>>             [10, 20, 80, 80, 70, 0],
+    >>>             [10, 100, 20, 100, 30, 100],
+    >>>         ],
+    >>>     }
+    >>> )
+    >>>
+    >>> st.data_editor(
+    >>>     data_df,
+    >>>     column_config={
+    >>>         "sales": st.column_config.AreaChartColumn(
+    >>>             "Sales (last 6 months)",
+    >>>             width="medium",
+    >>>             help="The sales volume in the last 6 months",
+    >>>             y_min=0,
+    >>>             y_max=100,
+    >>>          ),
+    >>>     },
+    >>>     hide_index=True,
+    >>> )
 
     .. output::
         https://doc-areachart-column.streamlit.app/
@@ -1626,22 +1584,16 @@ def ImageColumn(
 ) -> ColumnConfig:
     """Configure an image column in ``st.dataframe`` or ``st.data_editor``.
 
-    Image columns display an inline thumbnail. When a user double clicks a
-    thumbnail in a cell, Streamlit displays a larger image. To display an
-    image, a cell must have one of the following values:
+    The cell values need to be one of:
 
-    - A URL to fetch the image from. If you use `static file serving
-      <https://docs.streamlit.io/develop/concepts/configuration/serving-static-files>`_, the
-      URL can be relative to your app's URL. Otherwise, the URL must be fully qualified with
-      a scheme, like ``"https://example.com/my_image.jpg"``.
+    * A URL to fetch the image from. This can also be a relative URL of an image
+      deployed via `static file serving <https://docs.streamlit.io/develop/concepts/configuration/serving-static-files>`_.
+      Note that you can NOT use an arbitrary local image if it is not available through
+      a public URL.
+    * A data URL containing an SVG XML like ``data:image/svg+xml;utf8,<svg xmlns=...</svg>``.
+    * A data URL containing a Base64 encoded image like ``data:image/png;base64,iVBO...``.
 
-      Paths to local image files aren't supported.
-
-    - A data URL containing an SVG XML like ``"data:image/svg+xml;utf8,<svg xmlns=...</svg>"``.
-
-    - A data URL containing a Base64 encoded image like ``"data:image/png;base64,iVBO..."``.
-
-    Image columns aren't editable at this time. This command must be used in the
+    Image columns are not editable at the moment. This command needs to be used in the
     ``column_config`` parameter of ``st.dataframe`` or ``st.data_editor``.
 
     Parameters
@@ -1684,32 +1636,29 @@ def ImageColumn(
 
     Examples
     --------
-    .. code-block:: python
-        :filename: streamlit_app.py
-
-        import pandas as pd
-        import streamlit as st
-
-        data_df = pd.DataFrame(
-            {
-                "apps": [
-                    "https://storage.googleapis.com/s4a-prod-share-preview/default/st_app_screenshot_image/5435b8cb-6c6c-490b-9608-799b543655d3/Home_Page.png",
-                    "https://storage.googleapis.com/s4a-prod-share-preview/default/st_app_screenshot_image/ef9a7627-13f2-47e5-8f65-3f69bb38a5c2/Home_Page.png",
-                    "https://storage.googleapis.com/s4a-prod-share-preview/default/st_app_screenshot_image/31b99099-8eae-4ff8-aa89-042895ed3843/Home_Page.png",
-                    "https://storage.googleapis.com/s4a-prod-share-preview/default/st_app_screenshot_image/6a399b09-241e-4ae7-a31f-7640dc1d181e/Home_Page.png",
-                ],
-            }
-        )
-
-        st.data_editor(
-            data_df,
-            column_config={
-                "apps": st.column_config.ImageColumn(
-                    "Preview Image", help="Streamlit app preview screenshots"
-                )
-            },
-            hide_index=True,
-        )
+    >>> import pandas as pd
+    >>> import streamlit as st
+    >>>
+    >>> data_df = pd.DataFrame(
+    >>>     {
+    >>>         "apps": [
+    >>>             "https://storage.googleapis.com/s4a-prod-share-preview/default/st_app_screenshot_image/5435b8cb-6c6c-490b-9608-799b543655d3/Home_Page.png",
+    >>>             "https://storage.googleapis.com/s4a-prod-share-preview/default/st_app_screenshot_image/ef9a7627-13f2-47e5-8f65-3f69bb38a5c2/Home_Page.png",
+    >>>             "https://storage.googleapis.com/s4a-prod-share-preview/default/st_app_screenshot_image/31b99099-8eae-4ff8-aa89-042895ed3843/Home_Page.png",
+    >>>             "https://storage.googleapis.com/s4a-prod-share-preview/default/st_app_screenshot_image/6a399b09-241e-4ae7-a31f-7640dc1d181e/Home_Page.png",
+    >>>         ],
+    >>>     }
+    >>> )
+    >>>
+    >>> st.data_editor(
+    >>>     data_df,
+    >>>     column_config={
+    >>>         "apps": st.column_config.ImageColumn(
+    >>>             "Preview Image", help="Streamlit app preview screenshots"
+    >>>         )
+    >>>     },
+    >>>     hide_index=True,
+    >>> )
 
     .. output::
         https://doc-image-column.streamlit.app/
@@ -1736,20 +1685,15 @@ def AudioColumn(
 ) -> ColumnConfig:
     """Configure an audio column in ``st.dataframe`` or ``st.data_editor``.
 
-    Audio columns display an icon. When a user double clicks the icon in a cell,
-    Streamlit displays playback controls. To play an audio file, a cell must have
-    one of the following values:
+    The cell values need to be one of:
 
-    - A URL to fetch the audio from. If you use `static file serving
-      <https://docs.streamlit.io/develop/concepts/configuration/serving-static-files>`_, the
-      URL can be relative to your app's URL. Otherwise, the URL must be fully qualified with
-      a scheme, like ``"https://example.com/my_audio.mp3"``.
+    * A URL to fetch the audio from. This can also be a relative URL of an audio file
+      deployed via `static file serving <https://docs.streamlit.io/develop/concepts/configuration/serving-static-files>`_.
+      Note that you can NOT use an arbitrary local audio file if it is not available through
+      a public URL.
+    * A data URL containing a Base64 encoded audio like ``data:audio/mp3;base64,//uQ...``.
 
-      Paths to local audio files aren't supported.
-
-    - A data URL containing a Base64-encoded audio like ``"data:audio/mp3;base64,//uQ..."``.
-
-    Audio columns aren't editable at this time. This command must be used in the
+    Audio columns are not editable at the moment. This command needs to be used in the
     ``column_config`` parameter of ``st.dataframe`` or ``st.data_editor``.
 
     Parameters
@@ -1792,48 +1736,25 @@ def AudioColumn(
 
     Examples
     --------
-    You can use publicly accessible URLs or Base64-encoded audio data. To show
-    the playback controls, double click a cell in the audio column.
-
-    .. code-block:: python
-        :filename: streamlit_app.py
-
-        import base64
-        import pandas as pd
-        import streamlit as st
-
-
-        @st.cache_data
-        def load_audio_as_base64():
-            with open("cat-purr.mp3", "rb") as audio_file:
-                audio_bytes = audio_file.read()
-            return base64.b64encode(audio_bytes).decode("utf-8")
-
-
-        data_df = pd.DataFrame(
-            {
-                "source": [
-                    "Small and fluffy house panther",
-                    "Wikimedia, Performed by Muriel Nguyen Xuan and Stéphane Magnenat",
-                ],
-                "audio": [
-                    f"data:audio/mp3;base64,{load_audio_as_base64()}",
-                    "https://upload.wikimedia.org/wikipedia/commons/c/c4/Muriel-Nguyen-Xuan-Chopin-valse-opus64-1.ogg",
-                ],
-            }
-        )
-
-        st.dataframe(
-            data_df,
-            column_config={
-                "audio": st.column_config.AudioColumn("Preview Audio"),
-            },
-        )
-
-    .. output::
-        https://doc-audio-column.streamlit.app/
-        height: 400px
-
+    >>> import pandas as pd
+    >>> import streamlit as st
+    >>>
+    >>> data_df = pd.DataFrame(
+    >>>     {
+    >>>         "audio": [
+    >>>             "https://example.com/audio1.mp3",
+    >>>             "https://example.com/audio2.mp3",
+    >>>             "https://example.com/audio3.mp3",
+    >>>         ],
+    >>>     }
+    >>> )
+    >>>
+    >>> st.dataframe(
+    >>>     data_df,
+    >>>     column_config={
+    >>>         "audio": st.column_config.AudioColumn("Preview Audio"),
+    >>>     },
+    >>> )
     """
     return ColumnConfig(
         label=label,
@@ -1856,20 +1777,15 @@ def VideoColumn(
 ) -> ColumnConfig:
     """Configure a video column in ``st.dataframe`` or ``st.data_editor``.
 
-    Video columns display an icon. When a user double clicks the icon in a cell,
-    Streamlit displays playback controls. To display a video, a cell must have
-    one of the following values:
+    The cell values need to be one of:
 
-    - A URL to fetch the video from. If you use `static file serving
-      <https://docs.streamlit.io/develop/concepts/configuration/serving-static-files>`_, the
-      URL can be relative to your app's URL. Otherwise, the URL must be fully qualified with
-      a scheme, like ``"https://example.com/my_video.mp4"``.
+    * A URL to fetch the video from. This can also be a relative URL of a video file
+      deployed via `static file serving <https://docs.streamlit.io/develop/concepts/configuration/serving-static-files>`_.
+      Note that you can NOT use an arbitrary local video file if it is not available through
+      a public URL.
+    * A data URL containing a Base64 encoded video like ``data:video/mp4;base64,AAAA...``.
 
-      Paths to local video files and YouTube URLs aren't supported.
-
-    - A data URL containing a Base64-encoded video, like ``"data:video/mp4;base64,AAAA..."``.
-
-    Video columns aren't editable at this time. This command must be used in the
+    Video columns are not editable at the moment. This command needs to be used in the
     ``column_config`` parameter of ``st.dataframe`` or ``st.data_editor``.
 
     Parameters
@@ -1912,38 +1828,25 @@ def VideoColumn(
 
     Examples
     --------
-    To show the playback controls, double click a cell in the video column.
-
-    .. code-block:: python
-        :filename: streamlit_app.py
-
-        import pandas as pd
-        import streamlit as st
-
-        data_df = pd.DataFrame(
-            {
-                "description": [
-                    "Get started with Streamlit",
-                    "Get started with Community Cloud",
-                ],
-                "video": [
-                    "https://s3-us-west-2.amazonaws.com/assets.streamlit.io/videos/hero-video.mp4",
-                    "https://s3-us-west-2.amazonaws.com/assets.streamlit.io/videos/streamlit_sharing_silent.mp4",
-                ],
-            }
-        )
-
-        st.dataframe(
-            data_df,
-            column_config={
-                "video": st.column_config.VideoColumn("Preview Video"),
-            },
-        )
-
-    .. output::
-        https://doc-video-column.streamlit.app/
-        height: 400px
-
+    >>> import pandas as pd
+    >>> import streamlit as st
+    >>>
+    >>> data_df = pd.DataFrame(
+    >>>     {
+    >>>         "video": [
+    >>>             "https://example.com/video1.mp4",
+    >>>             "https://example.com/video2.mp4",
+    >>>             "https://example.com/video3.mp4",
+    >>>         ],
+    >>>     }
+    >>> )
+    >>>
+    >>> st.dataframe(
+    >>>     data_df,
+    >>>     column_config={
+    >>>         "video": st.column_config.VideoColumn("Preview Video"),
+    >>>     },
+    >>> )
     """
     return ColumnConfig(
         label=label,
@@ -2032,34 +1935,31 @@ def ListColumn(
 
     Examples
     --------
-    .. code-block:: python
-        :filename: streamlit_app.py
-
-        import pandas as pd
-        import streamlit as st
-
-        data_df = pd.DataFrame(
-            {
-                "sales": [
-                    [0, 4, 26, 80, 100, 40],
-                    [80, 20, 80, 35, 40, 100],
-                    [10, 20, 80, 80, 70, 0],
-                    [10, 100, 20, 100, 30, 100],
-                ],
-            }
-        )
-
-        st.data_editor(
-            data_df,
-            column_config={
-                "sales": st.column_config.ListColumn(
-                    "Sales (last 6 months)",
-                    help="The sales volume in the last 6 months",
-                    width="medium",
-                ),
-            },
-            hide_index=True,
-        )
+    >>> import pandas as pd
+    >>> import streamlit as st
+    >>>
+    >>> data_df = pd.DataFrame(
+    >>>     {
+    >>>         "sales": [
+    >>>             [0, 4, 26, 80, 100, 40],
+    >>>             [80, 20, 80, 35, 40, 100],
+    >>>             [10, 20, 80, 80, 70, 0],
+    >>>             [10, 100, 20, 100, 30, 100],
+    >>>         ],
+    >>>     }
+    >>> )
+    >>>
+    >>> st.data_editor(
+    >>>     data_df,
+    >>>     column_config={
+    >>>         "sales": st.column_config.ListColumn(
+    >>>             "Sales (last 6 months)",
+    >>>             help="The sales volume in the last 6 months",
+    >>>             width="medium",
+    >>>         ),
+    >>>     },
+    >>>     hide_index=True,
+    >>> )
 
     .. output::
         https://doc-list-column.streamlit.app/
@@ -2203,38 +2103,35 @@ def MultiselectColumn(
     parameter. You can also format the option labels with the ``format_func``
     parameter.
 
-    .. code-block:: python
-        :filename: streamlit_app.py
-
-        import pandas as pd
-        import streamlit as st
-
-        data_df = pd.DataFrame(
-            {
-                "category": [
-                    ["exploration", "visualization"],
-                    ["llm", "visualization"],
-                    ["exploration"],
-                ],
-            }
-        )
-
-        st.data_editor(
-            data_df,
-            column_config={
-                "category": st.column_config.MultiselectColumn(
-                    "App Categories",
-                    help="The categories of the app",
-                    options=[
-                        "exploration",
-                        "visualization",
-                        "llm",
-                    ],
-                    color=["#ffa421", "#803df5", "#00c0f2"],
-                    format_func=lambda x: x.capitalize(),
-                ),
-            },
-        )
+    >>> import pandas as pd
+    >>> import streamlit as st
+    >>>
+    >>> data_df = pd.DataFrame(
+    ...     {
+    ...         "category": [
+    ...             ["exploration", "visualization"],
+    ...             ["llm", "visualization"],
+    ...             ["exploration"],
+    ...         ],
+    ...     }
+    ... )
+    >>>
+    >>> st.data_editor(
+    ...     data_df,
+    ...     column_config={
+    ...         "category": st.column_config.MultiselectColumn(
+    ...             "App Categories",
+    ...             help="The categories of the app",
+    ...             options=[
+    ...                 "exploration",
+    ...                 "visualization",
+    ...                 "llm",
+    ...             ],
+    ...             color=["#ffa421", "#803df5", "#00c0f2"],
+    ...             format_func=lambda x: x.capitalize(),
+    ...         ),
+    ...     },
+    ... )
 
     .. output::
         https://doc-multiselect-column-1.streamlit.app/
@@ -2246,33 +2143,30 @@ def MultiselectColumn(
     and can be used to display colored tags. In this example, the dataframe
     uses the primary theme color for all tags.
 
-    .. code-block:: python
-        :filename: streamlit_app.py
-
-        import pandas as pd
-        import streamlit as st
-
-        data_df = pd.DataFrame(
-            {
-                "category": [
-                    ["exploration", "visualization"],
-                    ["llm", "visualization"],
-                    ["exploration"],
-                ],
-            }
-        )
-
-        st.dataframe(
-            data_df,
-            column_config={
-                "category": st.column_config.MultiselectColumn(
-                    "App Categories",
-                    options=["exploration", "visualization", "llm"],
-                    color="primary",
-                    format_func=lambda x: x.capitalize(),
-                ),
-            },
-        )
+    >>> import pandas as pd
+    >>> import streamlit as st
+    >>>
+    >>> data_df = pd.DataFrame(
+    ...     {
+    ...         "category": [
+    ...             ["exploration", "visualization"],
+    ...             ["llm", "visualization"],
+    ...             ["exploration"],
+    ...         ],
+    ...     }
+    ... )
+    >>>
+    >>> st.dataframe(
+    ...     data_df,
+    ...     column_config={
+    ...         "category": st.column_config.MultiselectColumn(
+    ...             "App Categories",
+    ...             options=["exploration", "visualization", "llm"],
+    ...             color="primary",
+    ...             format_func=lambda x: x.capitalize(),
+    ...         ),
+    ...     },
+    ... )
 
     .. output::
         https://doc-multiselect-column-2.streamlit.app/
@@ -2444,37 +2338,34 @@ def DatetimeColumn(
 
     Examples
     --------
-    .. code-block:: python
-        :filename: streamlit_app.py
-
-        from datetime import datetime
-        import pandas as pd
-        import streamlit as st
-
-        data_df = pd.DataFrame(
-            {
-                "appointment": [
-                    datetime(2024, 2, 5, 12, 30),
-                    datetime(2023, 11, 10, 18, 0),
-                    datetime(2024, 3, 11, 20, 10),
-                    datetime(2023, 9, 12, 3, 0),
-                ]
-            }
-        )
-
-        st.data_editor(
-            data_df,
-            column_config={
-                "appointment": st.column_config.DatetimeColumn(
-                    "Appointment",
-                    min_value=datetime(2023, 6, 1),
-                    max_value=datetime(2025, 1, 1),
-                    format="D MMM YYYY, h:mm a",
-                    step=60,
-                ),
-            },
-            hide_index=True,
-        )
+    >>> from datetime import datetime
+    >>> import pandas as pd
+    >>> import streamlit as st
+    >>>
+    >>> data_df = pd.DataFrame(
+    >>>     {
+    >>>         "appointment": [
+    >>>             datetime(2024, 2, 5, 12, 30),
+    >>>             datetime(2023, 11, 10, 18, 0),
+    >>>             datetime(2024, 3, 11, 20, 10),
+    >>>             datetime(2023, 9, 12, 3, 0),
+    >>>         ]
+    >>>     }
+    >>> )
+    >>>
+    >>> st.data_editor(
+    >>>     data_df,
+    >>>     column_config={
+    >>>         "appointment": st.column_config.DatetimeColumn(
+    >>>             "Appointment",
+    >>>             min_value=datetime(2023, 6, 1),
+    >>>             max_value=datetime(2025, 1, 1),
+    >>>             format="D MMM YYYY, h:mm a",
+    >>>             step=60,
+    >>>         ),
+    >>>     },
+    >>>     hide_index=True,
+    >>> )
 
     .. output::
         https://doc-datetime-column.streamlit.app/
@@ -2611,37 +2502,34 @@ def TimeColumn(
 
     Examples
     --------
-    .. code-block:: python
-        :filename: streamlit_app.py
-
-        from datetime import time
-        import pandas as pd
-        import streamlit as st
-
-        data_df = pd.DataFrame(
-            {
-                "appointment": [
-                    time(12, 30),
-                    time(18, 0),
-                    time(9, 10),
-                    time(16, 25),
-                ]
-            }
-        )
-
-        st.data_editor(
-            data_df,
-            column_config={
-                "appointment": st.column_config.TimeColumn(
-                    "Appointment",
-                    min_value=time(8, 0, 0),
-                    max_value=time(19, 0, 0),
-                    format="hh:mm a",
-                    step=60,
-                ),
-            },
-            hide_index=True,
-        )
+    >>> from datetime import time
+    >>> import pandas as pd
+    >>> import streamlit as st
+    >>>
+    >>> data_df = pd.DataFrame(
+    >>>     {
+    >>>         "appointment": [
+    >>>             time(12, 30),
+    >>>             time(18, 0),
+    >>>             time(9, 10),
+    >>>             time(16, 25),
+    >>>         ]
+    >>>     }
+    >>> )
+    >>>
+    >>> st.data_editor(
+    >>>     data_df,
+    >>>     column_config={
+    >>>         "appointment": st.column_config.TimeColumn(
+    >>>             "Appointment",
+    >>>             min_value=time(8, 0, 0),
+    >>>             max_value=time(19, 0, 0),
+    >>>             format="hh:mm a",
+    >>>             step=60,
+    >>>         ),
+    >>>     },
+    >>>     hide_index=True,
+    >>> )
 
     .. output::
         https://doc-time-column.streamlit.app/
@@ -2779,37 +2667,34 @@ def DateColumn(
 
     Examples
     --------
-    .. code-block:: python
-        :filename: streamlit_app.py
-
-        from datetime import date
-        import pandas as pd
-        import streamlit as st
-
-        data_df = pd.DataFrame(
-            {
-                "birthday": [
-                    date(1980, 1, 1),
-                    date(1990, 5, 3),
-                    date(1974, 5, 19),
-                    date(2001, 8, 17),
-                ]
-            }
-        )
-
-        st.data_editor(
-            data_df,
-            column_config={
-                "birthday": st.column_config.DateColumn(
-                    "Birthday",
-                    min_value=date(1900, 1, 1),
-                    max_value=date(2005, 1, 1),
-                    format="DD.MM.YYYY",
-                    step=1,
-                ),
-            },
-            hide_index=True,
-        )
+    >>> from datetime import date
+    >>> import pandas as pd
+    >>> import streamlit as st
+    >>>
+    >>> data_df = pd.DataFrame(
+    >>>     {
+    >>>         "birthday": [
+    >>>             date(1980, 1, 1),
+    >>>             date(1990, 5, 3),
+    >>>             date(1974, 5, 19),
+    >>>             date(2001, 8, 17),
+    >>>         ]
+    >>>     }
+    >>> )
+    >>>
+    >>> st.data_editor(
+    >>>     data_df,
+    >>>     column_config={
+    >>>         "birthday": st.column_config.DateColumn(
+    >>>             "Birthday",
+    >>>             min_value=date(1900, 1, 1),
+    >>>             max_value=date(2005, 1, 1),
+    >>>             format="DD.MM.YYYY",
+    >>>             step=1,
+    >>>         ),
+    >>>     },
+    >>>     hide_index=True,
+    >>> )
 
     .. output::
         https://doc-date-column.streamlit.app/
@@ -2945,31 +2830,28 @@ def ProgressColumn(
 
     Examples
     --------
-    .. code-block:: python
-        :filename: streamlit_app.py
-
-        import pandas as pd
-        import streamlit as st
-
-        data_df = pd.DataFrame(
-            {
-                "sales": [200, 550, 1000, 80],
-            }
-        )
-
-        st.data_editor(
-            data_df,
-            column_config={
-                "sales": st.column_config.ProgressColumn(
-                    "Sales volume",
-                    help="The sales volume in USD",
-                    format="$%f",
-                    min_value=0,
-                    max_value=1000,
-                ),
-            },
-            hide_index=True,
-        )
+    >>> import pandas as pd
+    >>> import streamlit as st
+    >>>
+    >>> data_df = pd.DataFrame(
+    >>>     {
+    >>>         "sales": [200, 550, 1000, 80],
+    >>>     }
+    >>> )
+    >>>
+    >>> st.data_editor(
+    >>>     data_df,
+    >>>     column_config={
+    >>>         "sales": st.column_config.ProgressColumn(
+    >>>             "Sales volume",
+    >>>             help="The sales volume in USD",
+    >>>             format="$%f",
+    >>>             min_value=0,
+    >>>             max_value=1000,
+    >>>         ),
+    >>>     },
+    >>>     hide_index=True,
+    >>> )
 
     .. output::
         https://doc-progress-column.streamlit.app/
@@ -3050,34 +2932,31 @@ def JsonColumn(
 
     Examples
     --------
-    .. code-block:: python
-        :filename: streamlit_app.py
-
-        import pandas as pd
-        import streamlit as st
-
-        data_df = pd.DataFrame(
-            {
-                "json": [
-                    {"foo": "bar", "bar": "baz"},
-                    {"foo": "baz", "bar": "qux"},
-                    {"foo": "qux", "bar": "foo"},
-                    None,
-                ],
-            }
-        )
-
-        st.dataframe(
-            data_df,
-            column_config={
-                "json": st.column_config.JsonColumn(
-                    "JSON Data",
-                    help="JSON strings or objects",
-                    width="large",
-                ),
-            },
-            hide_index=True,
-        )
+    >>> import pandas as pd
+    >>> import streamlit as st
+    >>>
+    >>> data_df = pd.DataFrame(
+    >>>     {
+    >>>         "json": [
+    >>>             {"foo": "bar", "bar": "baz"},
+    >>>             {"foo": "baz", "bar": "qux"},
+    >>>             {"foo": "qux", "bar": "foo"},
+    >>>             None,
+    >>>         ],
+    >>>     }
+    >>> )
+    >>>
+    >>> st.dataframe(
+    >>>     data_df,
+    >>>     column_config={
+    >>>         "json": st.column_config.JsonColumn(
+    >>>             "JSON Data",
+    >>>             help="JSON strings or objects",
+    >>>             width="large",
+    >>>         ),
+    >>>     },
+    >>>     hide_index=True,
+    >>> )
 
     .. output::
         https://doc-json-column.streamlit.app/

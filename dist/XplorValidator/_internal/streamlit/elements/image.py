@@ -33,14 +33,13 @@ from streamlit.elements.lib.image_utils import (
     ImageOrImageList,
     marshall_images,
 )
-from streamlit.elements.lib.layout_utils import create_layout_config
+from streamlit.elements.lib.layout_utils import LayoutConfig, Width, validate_width
 from streamlit.errors import StreamlitAPIException
 from streamlit.proto.Image_pb2 import ImageList as ImageListProto
 from streamlit.runtime.metrics_util import gather_metrics
 
 if TYPE_CHECKING:
     from streamlit.delta_generator import DeltaGenerator
-    from streamlit.elements.lib.layout_utils import Width
 
 UseColumnWith: TypeAlias = Literal["auto", "always", "never"] | bool | None
 
@@ -211,7 +210,8 @@ class ImageMixin:
             else:
                 width = "content"
 
-        layout_config = create_layout_config(width=width, allow_content_width=True)
+        validate_width(width, allow_content=True)
+        layout_config = LayoutConfig(width=width)
 
         image_list_proto = ImageListProto()
         marshall_images(

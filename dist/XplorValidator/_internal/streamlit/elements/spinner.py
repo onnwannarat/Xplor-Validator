@@ -18,7 +18,11 @@ import contextlib
 import threading
 from typing import TYPE_CHECKING, Final, cast
 
-from streamlit.elements.lib.layout_utils import create_layout_config
+from streamlit.elements.lib.layout_utils import (
+    LayoutConfig,
+    Width,
+    validate_width,
+)
 from streamlit.errors import NoSessionContext
 from streamlit.proto.Element_pb2 import Element as ElementProto
 from streamlit.proto.Spinner_pb2 import Spinner as SpinnerProto
@@ -29,7 +33,6 @@ if TYPE_CHECKING:
     from collections.abc import Iterator
 
     from streamlit.delta_generator import DeltaGenerator
-    from streamlit.elements.lib.layout_utils import Width
 
 # Set the message 0.5 seconds in the future to avoid annoying
 # flickering if this spinner runs too quickly.
@@ -97,7 +100,8 @@ class SpinnerMixin:
             height: 210px
 
         """
-        layout_config = create_layout_config(width=width, allow_content_width=True)
+        validate_width(width, allow_content=True)
+        layout_config = LayoutConfig(width=width)
 
         spinner_proto = SpinnerProto()
         spinner_proto.text = clean_text(text)

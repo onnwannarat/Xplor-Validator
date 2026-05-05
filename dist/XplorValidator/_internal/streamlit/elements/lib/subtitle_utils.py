@@ -21,7 +21,7 @@ from pathlib import Path
 
 from streamlit import runtime
 from streamlit.runtime import caching
-from streamlit.util import calc_hash
+from streamlit.util import calc_md5
 
 # Regular expression to match the SRT timestamp format
 # It matches the
@@ -161,7 +161,7 @@ def process_subtitle_data(
         raise TypeError(f"Invalid binary data format for subtitle: {type(data)}.")
 
     if runtime.exists():
-        filename = calc_hash(label.encode())
+        filename = calc_md5(label.encode())
         # Save the processed data and return the file URL
         file_url = runtime.get_instance().media_file_mgr.add(
             path_or_data=subtitle_data,

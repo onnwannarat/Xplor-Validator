@@ -38,8 +38,10 @@ from streamlit.deprecation_util import (
 from streamlit.elements.lib.form_utils import current_form_id
 from streamlit.elements.lib.layout_utils import (
     HeightWithoutContent,
+    LayoutConfig,
     WidthWithoutContent,
-    create_layout_config,
+    validate_height,
+    validate_width,
 )
 from streamlit.elements.lib.policies import check_widget_policies
 from streamlit.elements.lib.utils import Key, compute_and_register_element_id, to_key
@@ -509,7 +511,8 @@ class PydeckMixin:
                 width = "stretch"
             # Otherwise keep the provided width.
 
-        layout_config = create_layout_config(width=width, height=height)
+        validate_width(width, allow_content=False)
+        validate_height(height, allow_content=False)
 
         pydeck_proto = PydeckProto()
 
@@ -591,12 +594,14 @@ class PydeckMixin:
                 value_type="string_value",
             )
 
+            layout_config = LayoutConfig(width=width, height=height)
             self.dg._enqueue(
                 "deck_gl_json_chart", pydeck_proto, layout_config=layout_config
             )
 
             return widget_state.value
 
+        layout_config = LayoutConfig(width=width, height=height)
         return self.dg._enqueue(
             "deck_gl_json_chart", pydeck_proto, layout_config=layout_config
         )

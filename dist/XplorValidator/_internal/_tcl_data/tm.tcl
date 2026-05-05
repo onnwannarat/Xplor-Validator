@@ -326,13 +326,18 @@ proc ::tcl::tm::Defaults {} {
 	    [file join [file dirname [file dirname $exe]] lib] \
 	    ]
 
+    if {$tcl_platform(platform) eq "windows"} {
+	set sep ";"
+    } else {
+	set sep ":"
+    }
     for {set n $minor} {$n >= 0} {incr n -1} {
 	foreach ev [::list \
 			TCL${major}.${n}_TM_PATH \
 			TCL${major}_${n}_TM_PATH \
 	] {
 	    if {![info exists env($ev)]} continue
-	    foreach p [split $env($ev) $::tcl_platform(pathSeparator)] {
+	    foreach p [split $env($ev) $sep] {
 		path add $p
 	    }
 	}
@@ -373,4 +378,3 @@ proc ::tcl::tm::roots {paths} {
 # the chain.
 
 if {![interp issafe]} {::tcl::tm::Defaults}
-if {![interp issafe]} { ::tcl::tm::roots [list ~/Library/Tcl /Library/Tcl] }

@@ -1,13 +1,13 @@
 # -*- mode: python ; coding: utf-8 -*-
 #
-# PyInstaller spec file for Xplor Data Migration Validator
-# =========================================================
+# PyInstaller spec file for Xplor Data Migration Tools
+# =====================================================
 #
 # BUILD INSTRUCTIONS
 # ------------------
 # Run these commands once to install build tools:
-#   Windows:  py -m pip install pyinstaller streamlit pandas openpyxl
-#   Mac:      pip3 install pyinstaller streamlit pandas openpyxl
+#   Windows:  py -m pip install pyinstaller streamlit pandas openpyxl xlrd lxml
+#   Mac:      pip3 install pyinstaller streamlit pandas openpyxl xlrd lxml
 #
 # Then build (run from this project folder):
 #   Windows:  py -m PyInstaller xplor_validator.spec
@@ -28,7 +28,7 @@
 #   Zip the entire dist\XplorValidator\ folder for distribution.
 # - On Mac, users may need to right-click > Open on the first launch
 #   to bypass Gatekeeper, as the app is unsigned.
-# - Expected output size: ~400–600 MB (Streamlit + Pandas are large packages)
+# - Expected output size: ~450–650 MB (Streamlit + Pandas are large packages)
 # - Expected startup time: 5–15 seconds (Streamlit starts a local web server)
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -40,23 +40,38 @@ st_datas,     st_binaries,     st_hiddenimports     = collect_all("streamlit")
 pd_datas,     pd_binaries,     pd_hiddenimports     = collect_all("pandas")
 altair_datas, altair_binaries, altair_hiddenimports = collect_all("altair")
 openpyxl_datas, openpyxl_binaries, openpyxl_hiddenimports = collect_all("openpyxl")
+xlrd_datas,   xlrd_binaries,   xlrd_hiddenimports   = collect_all("xlrd")
+lxml_datas,   lxml_binaries,   lxml_hiddenimports   = collect_all("lxml")
 
 # ── Analysis ─────────────────────────────────────────────────────────────────
 a = Analysis(
     ["launcher.py"],
     pathex=["."],
     binaries=(
-        st_binaries + pd_binaries + altair_binaries + openpyxl_binaries
+        st_binaries
+        + pd_binaries
+        + altair_binaries
+        + openpyxl_binaries
+        + xlrd_binaries
+        + lxml_binaries
     ),
     datas=[
-        ("app.py",          "."),
+        # ── App entry point & core engine ─────────────────────────────────
+        ("Home.py",         "."),
         ("validator_v2.py", "."),
-    ] + st_datas + pd_datas + altair_datas + openpyxl_datas,
+        # ── Multi-page app structure ───────────────────────────────────────
+        ("pages",           "pages"),    # 1_Xplor_Validator … 5_Balance_Adjustments
+        ("shared",          "shared"),   # service_map.py, styles.py
+        ("scripts",         "scripts"),  # check_names, prepare_bookings_import, etc.
+        ("assets",          "assets"),   # Balance Adjustments template XLSX
+    ] + st_datas + pd_datas + altair_datas + openpyxl_datas + xlrd_datas + lxml_datas,
     hiddenimports=(
         st_hiddenimports
         + pd_hiddenimports
         + altair_hiddenimports
         + openpyxl_hiddenimports
+        + xlrd_hiddenimports
+        + lxml_hiddenimports
         + [
             # Streamlit internals
             "streamlit.runtime.scriptrunner.magic_funcs",
@@ -66,6 +81,11 @@ a = Analysis(
             "openpyxl.styles",
             "openpyxl.utils",
             "openpyxl.writer.excel",
+            # lxml — used by pandas.read_html for HTML-disguised XLS files
+            "lxml.etree",
+            "lxml.html",
+            # xlrd — used for true binary .xls files
+            "xlrd",
             # Data / serialisation
             "pyarrow",
             "pyarrow.vendored.version",
@@ -81,7 +101,7 @@ a = Analysis(
             "email.mime.text",
             "email.mime.base",
             "pkg_resources.py2_warn",
-            # tkinter (folder picker dialog)
+            # tkinter — used by _pick_folder() on Windows (native folder dialog)
             "tkinter",
             "tkinter.filedialog",
         ]
@@ -139,12 +159,12 @@ if sys.platform == "darwin":
         coll,
         name="XplorValidator.app",
         icon=None,  # Path to a .icns file for the dock icon
-        bundle_identifier="com.xplor.datamigration.validator",
+        bundle_identifier="com.xplor.datamigration.tools",
         info_plist={
-            "CFBundleName":               "Xplor Validator",
-            "CFBundleDisplayName":        "Xplor Data Migration Validator",
-            "CFBundleShortVersionString": "2.0.0",
-            "CFBundleVersion":            "2.0.0",
+            "CFBundleName":               "Xplor Migration Tools",
+            "CFBundleDisplayName":        "Xplor Data Migration Tools",
+            "CFBundleShortVersionString": "3.0.0",
+            "CFBundleVersion":            "3.0.0",
             "NSHighResolutionCapable":    True,
             "NSHumanReadableCopyright":   "Xplor Technologies",
             # Allow the browser to open localhost URLs from the app

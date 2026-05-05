@@ -30,8 +30,9 @@ from typing import (
 
 from streamlit.elements.lib.form_utils import current_form_id
 from streamlit.elements.lib.layout_utils import (
+    LayoutConfig,
     WidthWithoutContent,
-    create_layout_config,
+    validate_width,
 )
 from streamlit.elements.lib.policies import (
     check_widget_policies,
@@ -980,7 +981,8 @@ class TimeWidgetsMixin:
                 time_input_proto.value = serialized_value
             time_input_proto.set_value = True
 
-        layout_config = create_layout_config(width=width)
+        validate_width(width)
+        layout_config = LayoutConfig(width=width)
 
         self.dg._enqueue("time_input", time_input_proto, layout_config=layout_config)
         return widget_state.value
@@ -1407,7 +1409,8 @@ class TimeWidgetsMixin:
             date_time_input_proto.value[:] = serde.serialize(current_value)
             date_time_input_proto.set_value = True
 
-        layout_config = create_layout_config(width=width)
+        validate_width(width)
+        layout_config = LayoutConfig(width=width)
 
         self.dg._enqueue(
             "date_time_input", date_time_input_proto, layout_config=layout_config
@@ -1895,7 +1898,8 @@ class TimeWidgetsMixin:
             date_input_proto.value[:] = serde.serialize(current_value)
             date_input_proto.set_value = True
 
-        layout_config = create_layout_config(width=width)
+        validate_width(width)
+        layout_config = LayoutConfig(width=width)
 
         self.dg._enqueue("date_input", date_input_proto, layout_config=layout_config)
         return current_value

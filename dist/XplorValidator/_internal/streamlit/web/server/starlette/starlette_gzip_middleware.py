@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Custom GZip middleware for Streamlit HTTP responses."""
+"""Custom GZip middleware that excludes audio/video content from compression."""
 
 from __future__ import annotations
 
@@ -26,8 +26,6 @@ from starlette.middleware.gzip import (
     IdentityResponder,
 )
 
-from streamlit.web.server.starlette.starlette_routes import BASE_ROUTE_STATIC
-
 if TYPE_CHECKING:
     from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
@@ -39,14 +37,6 @@ _EXCLUDED_CONTENT_TYPES: Final = (
     "audio/",
     "video/",
 )
-
-
-def _should_bypass_static_gzip(path: str) -> bool:
-    """Return whether a request path should skip HTTP gzip compression."""
-    if not path or path == "/":
-        return True
-
-    return path.startswith(f"/{BASE_ROUTE_STATIC}/")
 
 
 def _handle_response_start(
@@ -129,16 +119,3 @@ class MediaAwareGZipMiddleware(GZipMiddleware):
             responder = _MediaAwareIdentityResponder(self.app, self.minimum_size)
 
         await responder(scope, receive, send)
-
-
-class SelectiveGZipMiddleware(MediaAwareGZipMiddleware):
-    """Skip gzip middleware for static asset-like HTTP paths."""
-
-    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if scope["type"] == "http" and _should_bypass_static_gzip(
-            scope.get("path", "")
-        ):
-            await self.app(scope, receive, send)
-            return
-
-        await super().__call__(scope, receive, send)
