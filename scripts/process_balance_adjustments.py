@@ -26,9 +26,7 @@ import csv
 import re
 
 import pandas as pd
-import openpyxl
 from openpyxl import load_workbook
-from openpyxl.utils import get_column_letter
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 INPUT_DIR = os.path.join(BASE_DIR, "input")
@@ -153,55 +151,31 @@ def parse_name(account_name):
     return account_name, ""
 
 
-def copy_template_header(template_ws, target_ws):
-    """Copy rows 1–4 (title + blank rows + header row) with styles to target_ws."""
-    # Column widths
-    for col_idx in range(1, template_ws.max_column + 1):
-        col_letter = get_column_letter(col_idx)
-        if col_letter in template_ws.column_dimensions:
-            target_ws.column_dimensions[col_letter].width = (
-                template_ws.column_dimensions[col_letter].width
-            )
+def write_output(centre_name, rows_df, template_bytes, output_dir):
+    """Create one output .xlsx file for a single centre.
 
-    for row_num in range(1, 5):
-        if row_num in template_ws.row_dimensions:
-            target_ws.row_dimensions[row_num].height = (
-                template_ws.row_dimensions[row_num].height
-            )
-        for col_idx in range(1, template_ws.max_column + 1):
-            src = template_ws.cell(row=row_num, column=col_idx)
-            dst = target_ws.cell(row=row_num, column=col_idx)
-            dst.value = src.value
-            if src.has_style:
-                dst.font = copy.copy(src.font)
-                dst.fill = copy.copy(src.fill)
-                dst.border = copy.copy(src.border)
-                dst.alignment = copy.copy(src.alignment)
-                dst.number_format = src.number_format
+    Loads a fresh copy of the template for every centre so that the workbook's
+    colour palette (including indexed/theme colours) is preserved exactly,
+    matching the grey header and border formatting of the template.
+    """
+    import io as _io
 
-    # Replicate merged cells that fall within the header area
-    for merge in template_ws.merged_cells.ranges:
-        if merge.min_row <= 4:
-            target_ws.merge_cells(str(merge))
+    # Fresh copy of the template — preserves the full colour palette and all
+    # header/title styles in rows 1–4 without any re-copying needed.
+    wb = load_workbook(_io.BytesIO(template_bytes))
+    ws = wb.active
 
-
-def write_output(centre_name, rows_df, template_wb, output_dir):
-    """Create one output .xlsx file for a single centre."""
-    template_ws = template_wb.active
-
-    # Capture data-row style from template row 5
-    style_ref = {
-        col_idx: template_ws.cell(row=5, column=col_idx)
-        for col_idx in range(1, template_ws.max_column + 1)
+    # Capture the data-row style index from template row 5.
+    # openpyxl stores all style attributes as a single StyleArray (array of ints)
+    # on each cell at ._style.  copy.copy() on a plain int-array is safe and
+    # avoids the RecursionError that copy.deepcopy() hits on proxy style objects.
+    style_ref: dict[int, object] = {
+        col_idx: copy.copy(ws.cell(row=5, column=col_idx)._style)
+        for col_idx in range(1, ws.max_column + 1)
     }
 
-    wb = openpyxl.Workbook()
-    ws = wb.active
-    ws.title = "Sheet1"
-    copy_template_header(template_ws, ws)
-
     has_credit_col = "Credit" in rows_df.columns
-    has_owing_col = "Owing" in rows_df.columns
+    has_owing_col  = "Owing"  in rows_df.columns
     has_amount_due = "Amount Due" in rows_df.columns
 
     for data_idx, (_, row) in enumerate(rows_df.iterrows()):
@@ -211,7 +185,7 @@ def write_output(centre_name, rows_df, template_wb, output_dir):
         # Resolve Credit / Owing
         if has_credit_col or has_owing_col:
             credit = parse_amount(row.get("Credit"))
-            owing = parse_amount(row.get("Owing"))
+            owing  = parse_amount(row.get("Owing"))
         elif has_amount_due:
             amount = parse_amount(row.get("Amount Due"))
             if amount is None:
@@ -228,12 +202,9 @@ def write_output(centre_name, rows_df, template_wb, output_dir):
         for col_idx, value in enumerate(data, start=1):
             dst = ws.cell(row=excel_row, column=col_idx)
             dst.value = value
-            src = style_ref[col_idx]
-            if src.has_style:
-                dst.font = copy.copy(src.font)
-                dst.fill = copy.copy(src.fill)
-                dst.border = copy.copy(src.border)
-                dst.alignment = copy.copy(src.alignment)
+            s = style_ref.get(col_idx)
+            if s is not None:
+                dst._style = copy.copy(s)
 
     safe_name = "".join(c if c not in r'\/:*?"<>|' else "_" for c in centre_name)
     out_path = os.path.join(output_dir, f"{safe_name}_Balance_Import.xlsx")
@@ -245,7 +216,7 @@ def _process_input_df(
     df: pd.DataFrame,
     filename: str,
     service_names: set,
-    template_wb,
+    template_bytes: bytes,
     output_dir: str,
 ) -> tuple[int, int, set, list[dict]]:
     """Process one input DataFrame and write per-centre output files.
@@ -278,7 +249,7 @@ def _process_input_df(
             skipped.add(centre_name)
             continue
         group = df[df[centre_col] == centre_name]
-        out_path = write_output(centre_name, group, template_wb, output_dir)
+        out_path = write_output(centre_name, group, template_bytes, output_dir)
         row_count = len(group)
         total_rows += row_count
         total_outputs += 1
@@ -311,11 +282,8 @@ def main(
     dict with keys: total_outputs, total_rows, skipped_centres (set),
     created_files (list of {centre, path, rows}), errors (list of str).
     """
-    import io as _io
-
     os.makedirs(output_dir, exist_ok=True)
     service_names = load_service_names_bytes(service_ids_bytes)
-    template_wb = load_workbook(_io.BytesIO(template_bytes))
 
     total_outputs = 0
     total_rows = 0
@@ -331,7 +299,7 @@ def main(
             continue
 
         n_out, n_rows, skipped, created = _process_input_df(
-            df, filename, service_names, template_wb, output_dir
+            df, filename, service_names, template_bytes, output_dir
         )
         total_outputs += n_out
         total_rows += n_rows
