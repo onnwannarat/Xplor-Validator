@@ -53,6 +53,7 @@ Validates a full QikKids migration export (CSV or XLSX) against Xplor import rul
 - Maps QK legacy service IDs to Xplor service IDs
 - Normalises state abbreviations and date formats
 - Deduplicates parent emails within a row
+- Removes `Child_CRN` when it matches a parent CRN (a child and parent cannot share the same CRN) — logged as **FIXED** in the audit report
 - Flags errors (must fix), warnings (review), and auto-fixes (applied automatically)
 - Cross-checks parents against other already-imported service files to catch duplicate profiles
 - Saves split CSVs per service, a full audit report, a client-facing audit report, and a duplicate parents report

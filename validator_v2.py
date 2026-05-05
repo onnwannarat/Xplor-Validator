@@ -1334,8 +1334,8 @@ def validate_waitlist_logic(row, row_num, child_name, recorder, headers):
 
 def transform_crn_child_parent_equality(row, row_num, child_name, recorder, headers):
     """
-    If Child_CRN is identical to Parent1_CRN or Parent2_CRN, flag it as a WARNING
-    for manual review.  The CRN is kept unchanged in the output.
+    If Child_CRN is identical to Parent1_CRN or Parent2_CRN, clear Child_CRN
+    automatically and log a FIXED entry.  A child and parent cannot share a CRN.
     """
     child_crn = row.get("Child_CRN", "").strip()
     if is_blank(child_crn):
@@ -1345,14 +1345,32 @@ def transform_crn_child_parent_equality(row, row_num, child_name, recorder, head
             continue
         parent_crn = row.get(parent_crn_field, "").strip()
         if parent_crn and child_crn == parent_crn:
+            row["Child_CRN"] = ""
             recorder.add(
                 row_num, child_name, "Child_CRN",
-                f"Child_CRN '{child_crn}' is identical to {parent_crn_field}. "
-                f"Please review — a child and parent sharing the same CRN may be incorrect.",
-                "WARNING",
-                action="Flagged for review (Child_CRN kept unchanged)",
+                f"Child_CRN '{child_crn}' was identical to {parent_crn_field}. "
+                f"Child_CRN has been removed — a child and parent cannot share the same CRN.",
+                "FIXED",
+                action=f"Child_CRN cleared (was '{child_crn}', same as {parent_crn_field})",
             )
-            return  # Only need to flag once; no point checking the second parent
+            return  # Only need to clear once; no point checking the second parent
+
+
+# Keep a thin validation wrapper for any remaining cases (should not trigger
+# after the transform above, but acts as a safety net).
+def validate_crn_child_parent_equality(row, row_num, child_name, recorder, headers):
+    """Child CRN must not be identical to any Parent CRN (post-transform safety check)."""
+    child_crn = row.get("Child_CRN", "").strip()
+    if is_blank(child_crn):
+        return
+    for parent_crn_field in ["Parent1_CRN", "Parent2_CRN"]:
+        if parent_crn_field not in headers:
+            continue
+        parent_crn = row.get(parent_crn_field, "").strip()
+        if parent_crn and child_crn == parent_crn:
+            recorder.add(row_num, child_name, f"Child_CRN / {parent_crn_field}",
+                         f"Child CRN '{child_crn}' is identical to {parent_crn_field}. "
+                         f"A child's CRN and parent's CRN must differ.", "ERROR")
 
 
 def validate_future_dob(row, row_num, child_name, recorder, headers):
@@ -2645,6 +2663,7 @@ def run_v2(
         validate_service_id(row, row_num, child_name, recorder, headers)
         validate_paired_name_fields(row, row_num, child_name, recorder, headers)
         validate_waitlist_logic(row, row_num, child_name, recorder, headers)
+        validate_crn_child_parent_equality(row, row_num, child_name, recorder, headers)
         validate_future_dob(row, row_num, child_name, recorder, headers)
         validate_enrolment_date_not_before_dob(row, row_num, child_name, recorder, headers)
         validate_medicare_number(row, row_num, child_name, recorder, headers)
@@ -2798,6 +2817,7 @@ def run_v2_from_bytes(
         validate_service_id(row, row_num, child_name, recorder, headers)
         validate_paired_name_fields(row, row_num, child_name, recorder, headers)
         validate_waitlist_logic(row, row_num, child_name, recorder, headers)
+        validate_crn_child_parent_equality(row, row_num, child_name, recorder, headers)
         validate_future_dob(row, row_num, child_name, recorder, headers)
         validate_enrolment_date_not_before_dob(row, row_num, child_name, recorder, headers)
         validate_medicare_number(row, row_num, child_name, recorder, headers)
