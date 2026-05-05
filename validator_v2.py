@@ -27,6 +27,8 @@ Output (written to the same folder as the input CSV):
 
 Dependencies:
     pip install pandas openpyxl
+
+Author: Amy Boonyaratanakornkit (Onboarding team)
 """
 
 import csv
@@ -34,7 +36,7 @@ import io
 import os
 import re
 import sys
-from collections import defaultdict
+from collections import Counter, defaultdict
 from datetime import date, datetime
 from pathlib import Path
 
@@ -233,6 +235,18 @@ EC_EMAIL_FIELDS = [
     "EmergencyContact5_Email",
 ]
 
+# Parent phone fields used for cross-service duplicate matching
+PARENT_PHONE_FIELDS_BY_PREFIX = {
+    "Parent1": ["Parent1_Contact_Mobile", "Parent1_Contact_Home", "Parent1_Work_Phone"],
+    "Parent2": ["Parent2_Contact_Mobile", "Parent2_Contact_Home", "Parent2_Work_Phone"],
+}
+
+# Parent email fields used for cross-service duplicate matching
+PARENT_EMAIL_FIELDS_BY_PREFIX = {
+    "Parent1": ["Parent1_Email", "Parent1_Work_Email"],
+    "Parent2": ["Parent2_Email", "Parent2_Work_Email"],
+}
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # REGEX PATTERNS
@@ -316,8 +330,20 @@ def normalise_key(col: str) -> str:
 
 
 def safe_str(value) -> str:
-    """Coerces a value to string, treating None as empty string."""
-    return "" if value is None else str(value)
+    """Coerces a value to string, treating None as empty string.
+
+    openpyxl reads integer-valued Excel cells as Python floats, so pandas
+    produces "248992.0" instead of "248992".  Strip the spurious ".0" so IDs
+    compare correctly when the same data arrives from both CSV and XLSX sources.
+    """
+    if value is None:
+        return ""
+    s = str(value)
+    if s.endswith(".0") and len(s) > 2:
+        core = s[:-2]
+        if core.lstrip("-").isdigit():
+            return core
+    return s
 
 
 def load_input_file(input_path: str) -> tuple[list[dict], list[str]]:
@@ -401,6 +427,87 @@ def load_input_bytes(raw: bytes, filename: str) -> tuple[list[dict], list[str]]:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# EXISTING SERVICE — PARENT PROFILE LOADER
+# Supports cross-service duplicate parent detection.
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _extract_parent_profiles_from_rows(rows: list[dict], source_file: str) -> list[dict]:
+    """
+    Extracts a flat list of parent profile dicts from a list of row dicts.
+
+    Each profile contains normalised (lowercase, stripped) identity fields so
+    that comparisons against the input file are case-insensitive.
+    """
+    profiles: list[dict] = []
+    for row in rows:
+        for prefix in ("Parent1", "Parent2"):
+            first_name = row.get(f"{prefix}_First_Name", "").strip().lower()
+            last_name  = row.get(f"{prefix}_Last_Name",  "").strip().lower()
+            if not first_name and not last_name:
+                continue  # Skip empty parent slots
+
+            dob = row.get(f"{prefix}_DOB", "").strip().lower()
+
+            contacts: set[str] = set()
+            for cf in PARENT_PHONE_FIELDS_BY_PREFIX.get(prefix, []):
+                v = row.get(cf, "").strip()
+                if v:
+                    contacts.add(re.sub(r"[\s\-\(\)]", "", v).lower())
+
+            emails: set[str] = set()
+            for ef in PARENT_EMAIL_FIELDS_BY_PREFIX.get(prefix, []):
+                v = row.get(ef, "").strip().lower()
+                if v:
+                    emails.add(v)
+
+            profiles.append({
+                "first_name":  first_name,
+                "last_name":   last_name,
+                "dob":         dob,
+                "contacts":    contacts,
+                "emails":      emails,
+                "source_file": source_file,
+                "service_id":  row.get("ServiceID", "").strip(),
+                "legacy_id":   row.get(f"{prefix}_Legacy_Account_ID", "").strip().lower(),
+                "parent_crn":  row.get(f"{prefix}_CRN", "").strip().lower(),
+            })
+    return profiles
+
+
+def load_existing_parent_profiles_from_paths(file_paths: list[str]) -> list[dict]:
+    """
+    Loads parent profiles from one or more existing-service CSV/XLSX files on disk.
+    Returns a flat list of profile dicts for use in cross-service duplicate checking.
+    Logs a warning and continues if any individual file cannot be read.
+    """
+    all_profiles: list[dict] = []
+    for path in file_paths:
+        try:
+            rows, _ = load_input_file(path)
+            all_profiles.extend(_extract_parent_profiles_from_rows(rows, Path(path).name))
+        except Exception as exc:
+            print(f"  [WARNING] Could not load existing-service file '{path}': {exc}")
+    return all_profiles
+
+
+def load_existing_parent_profiles_from_bytes(
+    files: list[tuple[bytes, str]],
+) -> list[dict]:
+    """
+    In-memory variant of load_existing_parent_profiles_from_paths.
+    Accepts a list of (file_bytes, filename) tuples — for Streamlit / bytes-based callers.
+    """
+    all_profiles: list[dict] = []
+    for raw, filename in files:
+        try:
+            rows, _ = load_input_bytes(raw, filename)
+            all_profiles.extend(_extract_parent_profiles_from_rows(rows, filename))
+        except Exception as exc:
+            print(f"  [WARNING] Could not parse existing-service file '{filename}': {exc}")
+    return all_profiles
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # SERVICE MAPPING
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -456,7 +563,7 @@ class ServiceMapping:
     def is_loaded(self) -> bool:
         return self._loaded
 
-    def lookup_by_qk(self, qk_id: str) -> tuple[str, str] | tuple[None, None]:
+    def lookup_by_qk(self, qk_id: str) -> tuple[str | None, str | None]:
         """
         Returns (xplor_service_id, service_name) for a given QK_Service_ID,
         or (None, None) if not found.
@@ -515,14 +622,19 @@ class IssueRecorder:
         severity:    str,
         action:      str = "",
         tag:         str = "",
+        **meta,
     ) -> None:
         """Records a single validation issue or transformation action.
 
-        tag — optional internal category used to filter the client report
-              (e.g. 'duplicate_parent_email', 'redundant_ec').  Not written
-              to the main report columns.
+        tag  — optional internal category used to filter specialist reports
+               (e.g. 'duplicate_parent_email', 'redundant_ec',
+               'cross_service_duplicate_parent').  Not written to main report columns.
+        meta — optional arbitrary keyword arguments stored as '_key: value' pairs
+               alongside the issue.  Used by specialist report writers to access
+               structured data without parsing the description string.
+               Example: source_file='abc.csv', existing_service_id='12345'
         """
-        self.issues.append({
+        entry = {
             "Row":               row_num,
             "Child_Name":        child_name,
             "Field":             field,
@@ -530,7 +642,9 @@ class IssueRecorder:
             "Severity_Level":    severity,
             "Action_Taken":      action,
             "_tag":              tag,
-        })
+        }
+        entry.update({f"_{k}": v for k, v in meta.items()})
+        self.issues.append(entry)
 
     def error_count(self) -> int:
         return sum(1 for i in self.issues if i["Severity_Level"] == "ERROR")
@@ -694,8 +808,7 @@ def build_service_state_fallbacks(all_rows: list) -> dict[str, str]:
     rows receive the modal state for their service.
     """
     # service_id -> Counter of valid state codes
-    from collections import Counter
-    service_state_counts: dict[str, Counter] = defaultdict(Counter)
+    service_state_counts: defaultdict[str, Counter[str]] = defaultdict(Counter)
 
     for entry in all_rows:
         row       = entry["row"]
@@ -843,6 +956,119 @@ def transform_blank_first_names(
                 f"First name has been set to the last name value.",
                 "FIXED",
                 action=f"Copied '{last_val}' from {last_field} into {first_field}",
+            )
+
+
+def transform_legacy_ids(
+    row: dict, row_num: int, child_name: str,
+    recorder: IssueRecorder, headers: set,
+) -> None:
+    """
+    1. Prefixes Child_Legacy_Id with the Xplor Service ID (e.g. "1234_29085").
+    2. Detects when Parent1 and Parent2 are the same person (matching first name,
+       last name, DOB, AND Legacy Account ID) and makes P2's Legacy ID unique by
+       appending '_1' (e.g. "38889_1").
+    Parent legacy IDs are left as-is (no service prefix).
+    All changes are logged as FIXED entries.
+    """
+    service_id = row.get("ServiceID", "").strip()
+    if not service_id:
+        return
+
+    # ── 1. Child Legacy ID ────────────────────────────────────────────────────
+    child_legacy_field = "Child_Legacy_Id"
+    if child_legacy_field in headers:
+        original = row.get(child_legacy_field, "").strip()
+        if original and original != "0":
+            new_val = f"{service_id}_{original}"
+            row[child_legacy_field] = new_val
+            recorder.add(
+                row_num, child_name, child_legacy_field,
+                f"Child Legacy ID prefixed with Xplor Service ID: '{original}' → '{new_val}'.",
+                "FIXED",
+                action=f"Child Legacy ID prefixed: '{original}' → '{new_val}'",
+            )
+
+    # ── 2. Detect P1 == P2 (same physical person) ────────────────────────────
+    p1_first  = row.get("Parent1_First_Name",        "").strip().lower()
+    p1_last   = row.get("Parent1_Last_Name",         "").strip().lower()
+    p1_dob    = row.get("Parent1_DOB",               "").strip()
+    p1_legacy = row.get("Parent1_Legacy_Account_ID", "").strip()
+
+    p2_first  = row.get("Parent2_First_Name",        "").strip().lower()
+    p2_last   = row.get("Parent2_Last_Name",         "").strip().lower()
+    p2_dob    = row.get("Parent2_DOB",               "").strip()
+    p2_legacy = row.get("Parent2_Legacy_Account_ID", "").strip()
+
+    if (
+        p1_first and p2_first
+        and p1_first  == p2_first
+        and p1_last   == p2_last
+        and p1_dob    and p2_dob  and p1_dob   == p2_dob
+        and p1_legacy and p2_legacy and p1_legacy == p2_legacy
+    ):
+        unique_p2 = f"{p2_legacy}_1"
+        row["Parent2_Legacy_Account_ID"] = unique_p2
+        recorder.add(
+            row_num, child_name, "Parent2_Legacy_Account_ID",
+            f"Parent1 and Parent2 appear to be the same person "
+            f"(name, DOB, and Legacy ID all match: '{p2_legacy}'). "
+            f"Parent2 Legacy ID made unique: '{p2_legacy}' → '{unique_p2}'.",
+            "FIXED",
+            action=f"Parent2 Legacy ID uniquified: '{p2_legacy}' → '{unique_p2}'",
+        )
+
+
+
+def transform_phone_leading_zero(
+    row: dict, row_num: int, child_name: str,
+    recorder: IssueRecorder, headers: set,
+) -> None:
+    """
+    Prepends a leading '0' to any phone/contact-number field that consists
+    entirely of digits (with optional spaces or hyphens as separators) but does
+    not already start with '0' or '+' (international prefix).
+    Logs a FIXED entry for every number corrected.
+    """
+    for field in PHONE_FIELDS:
+        if field not in headers:
+            continue
+        original = row.get(field, "").strip()
+        if is_blank(original):
+            continue
+        if original.startswith("+"):
+            continue  # International format — leave as-is
+        stripped = re.sub(r"[\s\-\(\)]", "", original)
+        if stripped.isdigit() and not stripped.startswith("0"):
+            new_val = "0" + original
+            row[field] = new_val
+            recorder.add(
+                row_num, child_name, field,
+                f"Phone number '{original}' was missing a leading zero. "
+                f"Prepended '0': '{new_val}'.",
+                "FIXED",
+                action=f"Leading zero added: '{original}' → '{new_val}'",
+            )
+
+
+def transform_consents_photos(
+    row: dict, row_num: int, child_name: str,
+    recorder: IssueRecorder, headers: set,
+) -> None:
+    """
+    Sets Consents_Photos (and Consents_Photos_Videos if present) to 'N' when
+    the field is blank, rather than leaving it empty and generating a warning.
+    """
+    for field in ("Consents_Photos", "Consents_Photos_Videos"):
+        if field not in headers:
+            continue
+        if is_blank(row.get(field, "")):
+            row[field] = "N"
+            recorder.add(
+                row_num, child_name, field,
+                f"'{field}' was blank — defaulted to 'N' (no photo consent).",
+                "FIXED",
+                action=f"'{field}' set to 'N' (was blank)",
             )
 
 
@@ -1108,8 +1334,8 @@ def validate_waitlist_logic(row, row_num, child_name, recorder, headers):
 
 def transform_crn_child_parent_equality(row, row_num, child_name, recorder, headers):
     """
-    If Child_CRN is identical to Parent1_CRN or Parent2_CRN, clear Child_CRN
-    automatically and log a FIXED entry.  A child and parent cannot share a CRN.
+    If Child_CRN is identical to Parent1_CRN or Parent2_CRN, flag it as a WARNING
+    for manual review.  The CRN is kept unchanged in the output.
     """
     child_crn = row.get("Child_CRN", "").strip()
     if is_blank(child_crn):
@@ -1119,32 +1345,14 @@ def transform_crn_child_parent_equality(row, row_num, child_name, recorder, head
             continue
         parent_crn = row.get(parent_crn_field, "").strip()
         if parent_crn and child_crn == parent_crn:
-            row["Child_CRN"] = ""
             recorder.add(
                 row_num, child_name, "Child_CRN",
-                f"Child_CRN '{child_crn}' was identical to {parent_crn_field}. "
-                f"Child_CRN has been removed — a child and parent cannot share the same CRN.",
-                "FIXED",
-                action=f"Child_CRN cleared (was '{child_crn}', same as {parent_crn_field})",
+                f"Child_CRN '{child_crn}' is identical to {parent_crn_field}. "
+                f"Please review — a child and parent sharing the same CRN may be incorrect.",
+                "WARNING",
+                action="Flagged for review (Child_CRN kept unchanged)",
             )
-            return  # Only need to clear once; no point checking the second parent
-
-
-# Keep a thin validation wrapper for any remaining cases (should not trigger
-# after the transform above, but acts as a safety net).
-def validate_crn_child_parent_equality(row, row_num, child_name, recorder, headers):
-    """Child CRN must not be identical to any Parent CRN (post-transform safety check)."""
-    child_crn = row.get("Child_CRN", "").strip()
-    if is_blank(child_crn):
-        return
-    for parent_crn_field in ["Parent1_CRN", "Parent2_CRN"]:
-        if parent_crn_field not in headers:
-            continue
-        parent_crn = row.get(parent_crn_field, "").strip()
-        if parent_crn and child_crn == parent_crn:
-            recorder.add(row_num, child_name, f"Child_CRN / {parent_crn_field}",
-                         f"Child CRN '{child_crn}' is identical to {parent_crn_field}. "
-                         f"A child's CRN and parent's CRN must differ.", "ERROR")
+            return  # Only need to flag once; no point checking the second parent
 
 
 def validate_future_dob(row, row_num, child_name, recorder, headers):
@@ -1257,7 +1465,9 @@ def _get_parent_identity_key(row: dict, prefix: str) -> str:
 def check_duplicates(all_rows, recorder, headers):
     """Checks Child_Legacy_Id and Child_CRN for uniqueness across all rows."""
     config = {"Child_Legacy_Id": "ERROR", "Child_CRN": "ERROR"}
-    seen: dict = defaultdict(lambda: defaultdict(list))
+    seen: defaultdict[str, defaultdict[str, list[tuple[int, str]]]] = defaultdict(
+        lambda: defaultdict(list)
+    )
     for entry in all_rows:
         for field in config:
             if field not in headers:
@@ -1288,8 +1498,8 @@ def check_duplicate_parent_emails(all_rows, recorder, headers):
         email_field = f"{prefix}_Email"
         if email_field not in headers:
             continue
-        email_to_identities: dict = defaultdict(set)
-        email_to_rows: dict = defaultdict(list)
+        email_to_identities: defaultdict[str, set[str]] = defaultdict(set)
+        email_to_rows: defaultdict[str, list[tuple[int, str]]] = defaultdict(list)
         for entry in all_rows:
             email = entry["row"].get(email_field, "").strip().lower()
             if is_blank(email):
@@ -1328,8 +1538,8 @@ def check_parent_crn_email_registry(all_rows, recorder, headers):
         crn_field, email_field = f"{prefix}_CRN", f"{prefix}_Email"
         if crn_field not in headers or email_field not in headers:
             continue
-        crn_to_emails: dict = defaultdict(set)
-        crn_to_rows:   dict = defaultdict(list)
+        crn_to_emails: defaultdict[str, set[str]] = defaultdict(set)
+        crn_to_rows:   defaultdict[str, list[tuple[int, str]]] = defaultdict(list)
         for entry in all_rows:
             row = entry["row"]
             crn   = row.get(crn_field,   "").strip().lower()
@@ -1370,6 +1580,258 @@ def check_enrolment_parent_crn_consistency(all_rows, recorder, headers):
                          f"The CCS parent must be one of the child's listed guardians.", "ERROR")
 
 
+def check_cross_service_parent_duplicates(
+    all_rows:          list,
+    existing_profiles: list[dict],
+    recorder:          "IssueRecorder",
+) -> None:
+    """
+    Cross-checks every Parent 1 and Parent 2 in the input file against parent
+    profiles extracted from existing-service data files.
+
+    A match is flagged as an ERROR when:
+      • First name AND last name both match (case-insensitive), AND
+      • At least one of DOB, contact number, or email also matches.
+
+    This combination minimises false positives from common names while reliably
+    catching genuine duplicate accounts that would be created on import.
+
+    Action required (written into the report):
+      Link the affected children to the already-existing parent profile, then
+      delete the newly created duplicate profile.
+    """
+    if not existing_profiles:
+        return
+
+    for entry in all_rows:
+        row        = entry["row"]
+        row_num    = entry["row_num"]
+        child_name = entry["child_name"]
+
+        for prefix in ("Parent1", "Parent2"):
+            first_name = row.get(f"{prefix}_First_Name", "").strip().lower()
+            last_name  = row.get(f"{prefix}_Last_Name",  "").strip().lower()
+            if not first_name and not last_name:
+                continue  # No parent data in this slot
+
+            dob = row.get(f"{prefix}_DOB", "").strip().lower()
+
+            contacts: set[str] = set()
+            for cf in PARENT_PHONE_FIELDS_BY_PREFIX.get(prefix, []):
+                v = row.get(cf, "").strip()
+                if v:
+                    contacts.add(re.sub(r"[\s\-\(\)]", "", v).lower())
+
+            emails: set[str] = set()
+            for ef in PARENT_EMAIL_FIELDS_BY_PREFIX.get(prefix, []):
+                v = row.get(ef, "").strip().lower()
+                if v:
+                    emails.add(v)
+
+            input_legacy_id = row.get(f"{prefix}_Legacy_Account_ID", "").strip().lower()
+
+            # Compare against each existing profile
+            for profile in existing_profiles:
+                if profile["first_name"] != first_name or profile["last_name"] != last_name:
+                    continue  # Names don't match — skip quickly
+
+                # Matching Legacy IDs mean the system will link the accounts automatically
+                # rather than creating a new profile — no duplicate will occur.
+                if input_legacy_id and profile["legacy_id"] and input_legacy_id == profile["legacy_id"]:
+                    continue
+
+                # Names match: check at least one secondary field
+                matched_fields: list[str] = []
+
+                if dob and profile["dob"] and dob == profile["dob"]:
+                    matched_fields.append(f"DOB: {row.get(f'{prefix}_DOB', '').strip()}")
+
+                shared_contacts = contacts & profile["contacts"]
+                if shared_contacts:
+                    matched_fields.append(f"Contact: {next(iter(shared_contacts))}")
+
+                shared_emails = emails & profile["emails"]
+                if shared_emails:
+                    matched_fields.append(f"Email: {next(iter(shared_emails))}")
+
+                if not matched_fields:
+                    continue  # Name match only — not enough confidence
+
+                display_name = (
+                    f"{row.get(f'{prefix}_First_Name', '').strip()} "
+                    f"{row.get(f'{prefix}_Last_Name', '').strip()}".strip()
+                )
+                svc_label = (
+                    f"Service ID {profile['service_id']}"
+                    if profile["service_id"]
+                    else "unknown service"
+                )
+                matched_str = ", ".join(matched_fields)
+                recorder.add(
+                    row_num,
+                    child_name,
+                    f"{prefix}_First_Name / {prefix}_Last_Name",
+                    f"Potential duplicate parent: '{display_name}' matches an existing parent "
+                    f"profile in '{profile['source_file']}' ({svc_label}). "
+                    f"Matched on: {matched_str}. "
+                    f"Action required: (1) Link this parent's children to the existing profile "
+                    f"in the existing service. (2) Delete the newly created duplicate profile.",
+                    "ERROR",
+                    tag="cross_service_duplicate_parent",
+                    parent_slot=prefix,
+                    parent_name=display_name,
+                    matched_on=matched_str,
+                    duplicate_source=f"Existing file: {profile['source_file']}",
+                    duplicate_service_id=profile["service_id"],
+                    duplicate_parent_crn=profile["parent_crn"],
+                    duplicate_legacy_id=profile["legacy_id"],
+                )
+                break  # Report once per parent slot — first match is sufficient
+
+
+def check_intra_file_parent_duplicates(
+    all_rows: list,
+    recorder: "IssueRecorder",
+) -> None:
+    """
+    Detects duplicate parent profiles within the upload file.
+
+    A duplicate profile is flagged when two parent slots (P1 or P2, in any
+    combination, across any services) satisfy ALL of:
+
+      1. First name + last name match (case-insensitive)
+      2. Date of birth matches
+      3. At least one contact number matches (normalised — spaces and hyphens stripped)
+      4. Legacy Account IDs differ  ← confirms two distinct profiles for the same person
+
+    Condition 4 is the key: if the same person correctly shares one Legacy ID
+    across multiple child rows, the system will link them automatically and no
+    action is needed.  Differing Legacy IDs mean two separate accounts would be
+    created for the same physical person, requiring manual clean-up after import.
+
+    This check covers two real-world scenarios:
+      • Cross-service  — parent appears in different services with different IDs
+      • Same-service   — parent appears as P1 for one child and P2 for another
+                         with different IDs (e.g. data-entry error in source system)
+
+    Each pair is reported once — from the perspective of the earlier row.
+    """
+    # Build a flat profile list with row context
+    profiles: list[dict] = []
+    for entry in all_rows:
+        row        = entry["row"]
+        row_num    = entry["row_num"]
+        child_name = entry["child_name"]
+        service_id = row.get("ServiceID", "").strip()
+
+        for prefix in ("Parent1", "Parent2"):
+            first_name = row.get(f"{prefix}_First_Name", "").strip().lower()
+            last_name  = row.get(f"{prefix}_Last_Name",  "").strip().lower()
+            if not first_name and not last_name:
+                continue
+
+            dob = row.get(f"{prefix}_DOB", "").strip()
+
+            contacts: set[str] = set()
+            for cf in PARENT_PHONE_FIELDS_BY_PREFIX.get(prefix, []):
+                v = row.get(cf, "").strip()
+                if v:
+                    contacts.add(re.sub(r"[\s\-\(\)]", "", v).lower())
+
+            crn       = row.get(f"{prefix}_CRN",                 "").strip().lower()
+            legacy_id = row.get(f"{prefix}_Legacy_Account_ID",   "").strip().lower()
+            display   = (
+                f"{row.get(f'{prefix}_First_Name', '').strip()} "
+                f"{row.get(f'{prefix}_Last_Name',  '').strip()}".strip()
+            )
+
+            profiles.append({
+                "row_num":     row_num,
+                "child_name":  child_name,
+                "parent_slot": prefix,
+                "display":     display,
+                "first_name":  first_name,
+                "last_name":   last_name,
+                "dob":         dob,
+                "contacts":    contacts,
+                "crn":         crn,
+                "legacy_id":   legacy_id,
+                "service_id":  service_id,
+            })
+
+    reported_pairs: set[frozenset] = set()
+
+    for i, pa in enumerate(profiles):
+        for pb in profiles[i + 1:]:
+            # ── Condition 1: names must match ─────────────────────────────────
+            if pa["first_name"] != pb["first_name"] or pa["last_name"] != pb["last_name"]:
+                continue
+
+            # ── Condition 2: DOB must match ───────────────────────────────────
+            if not pa["dob"] or not pb["dob"] or pa["dob"] != pb["dob"]:
+                continue
+
+            # ── Condition 3: at least one contact number must match ───────────
+            shared_contacts = pa["contacts"] & pb["contacts"]
+            if not shared_contacts:
+                continue
+
+            # ── Condition 4: legacy IDs must differ ───────────────────────────
+            # Same base legacy ID = intentional shared profile; skip.
+            # Strip any '_\d+' uniquifier suffix added by transform_legacy_ids
+            # so that e.g. '248992' and '248992_1' are treated as the same person.
+            def _base(lid: str) -> str:
+                return re.sub(r'_\d+$', '', lid) if lid else lid
+
+            if pa["legacy_id"] and pb["legacy_id"] and _base(pa["legacy_id"]) == _base(pb["legacy_id"]):
+                continue
+
+            # Avoid reporting the same pair twice (A→B and B→A)
+            pair_key = frozenset([
+                (pa["row_num"], pa["parent_slot"]),
+                (pb["row_num"], pb["parent_slot"]),
+            ])
+            if pair_key in reported_pairs:
+                continue
+            reported_pairs.add(pair_key)
+
+            same_service = pa["service_id"] == pb["service_id"]
+            context = (
+                f"Service {pa['service_id']}"
+                if same_service
+                else f"Service {pa['service_id']} and Service {pb['service_id']}"
+            )
+            matched_contact = next(iter(shared_contacts))
+            matched_str = f"DOB: {pa['dob']}, Contact: {matched_contact}"
+
+            msg = (
+                f"Duplicate parent profile: '{pa['display']}' (legacy '{pa['legacy_id']}') and "
+                f"'{pb['display']}' (legacy '{pb['legacy_id']}') appear to be the same person "
+                f"in {context}. Matched on: {matched_str}. "
+                f"Action required: After import, link both children to the same parent "
+                f"profile and remove the duplicate account."
+            )
+
+            # Record once for each side so both legacy IDs are searchable in the report
+            for src, dst in ((pa, pb), (pb, pa)):
+                recorder.add(
+                    src["row_num"],
+                    src["child_name"],
+                    f"{src['parent_slot']}_Legacy_Account_ID",
+                    msg,
+                    "WARNING",
+                    tag="intra_file_duplicate_parent",
+                    parent_slot=src["parent_slot"],
+                    parent_name=src["display"],
+                    matched_on=matched_str,
+                    duplicate_source="Input file",
+                    duplicate_row_num=dst["row_num"],
+                    duplicate_service_id=dst["service_id"],
+                    duplicate_parent_crn=dst["crn"],
+                    duplicate_legacy_id=dst["legacy_id"],
+                )
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # OUTPUT — SPLIT BY SERVICE
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1383,18 +1845,19 @@ def write_split_csvs(
     all_rows: list,
     fieldnames: list[str],
     output_dir: str,
+    service_map: "ServiceMapping | None" = None,
 ) -> tuple[dict[str, str], dict[int, int]]:
     """
-    Writes one CSV per distinct Xplor_Service_ID found in the transformed data.
-    Files are named: ready_to_import_{Xplor_Service_ID}.csv
+    Writes one CSV per distinct Xplor Service ID found in the transformed data.
+    Files are named: {Service_Name}_families_import.csv
+    Falls back to {Service_ID}_families_import.csv when the name is unavailable.
 
     Returns:
         output_paths — dict mapping service_id -> output file path
         row_num_map  — dict mapping original row_num -> row number within the
                        service's output file (row 2 = first data row after header)
     """
-    # Group entries by service ID, preserving full entry dicts (not just rows)
-    service_entries: dict[str, list] = defaultdict(list)
+    service_entries: defaultdict[str, list[dict]] = defaultdict(list)
     for entry in all_rows:
         svc_id = entry["row"].get("ServiceID", "").strip()
         service_entries[svc_id or "Unknown"].append(entry)
@@ -1403,11 +1866,20 @@ def write_split_csvs(
     row_num_map:  dict[int, int]  = {}
 
     for svc_id, entries in service_entries.items():
-        safe_id      = sanitise_filename(svc_id or "Unknown")
-        filename     = f"ready_to_import_{safe_id}.csv"
-        out_path     = os.path.join(output_dir, filename)
+        # Prefer the human-readable service name for the filename.
+        # Try (in order): Service_Name field in the row data, then service_map lookup.
+        svc_name = ""
+        if entries:
+            svc_name = entries[0]["row"].get("Service_Name", "").strip()
+        if not svc_name and service_map and service_map.is_loaded:
+            candidate = service_map.get_name_by_xplor(svc_id)
+            if candidate != svc_id:   # returns the ID itself when not found
+                svc_name = candidate
+        label    = sanitise_filename(svc_name or svc_id or "Unknown")
+        filename = f"{label}_families_import.csv"
+        out_path = os.path.join(output_dir, filename)
 
-        with open(out_path, "w", newline="", encoding="utf-8") as f:
+        with open(out_path, "w", newline="", encoding="utf-8-sig") as f:
             writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
             writer.writeheader()
             for out_row_idx, entry in enumerate(entries, start=2):
@@ -1424,12 +1896,12 @@ def write_split_csvs(
 # OUTPUT — EXCEL AUDIT REPORT (.xlsx)
 # ─────────────────────────────────────────────────────────────────────────────
 
-# Colour palettes for the report
-COLOUR_ERROR   = "FFCCCC"   # Light red
-COLOUR_WARNING = "FFF3CC"   # Light amber
-COLOUR_FIXED   = "CCFFCC"   # Light green
-COLOUR_HEADER  = "1E3A5F"   # Dark navy (Xplor brand-ish)
-COLOUR_SUMMARY = "E8EEF4"   # Light blue-grey
+# Colour palettes for the report — pastel tones, easy on the eyes
+COLOUR_ERROR   = "FFE4E6"   # Pastel blush pink
+COLOUR_WARNING = "FFF8DC"   # Pastel cornsilk yellow
+COLOUR_FIXED   = "E6F4EA"   # Pastel mint green
+COLOUR_HEADER  = "4472C4"   # Xplor cornflower blue
+COLOUR_SUMMARY = "EBF3FB"   # Very light sky blue
 
 # Tags that identify client-facing issues (used to populate client_audit_report.xlsx)
 CLIENT_ISSUE_TAGS = {"duplicate_parent_email", "redundant_ec"}
@@ -1757,48 +2229,313 @@ def write_client_excel_report(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# OUTPUT — DUPLICATE PARENT REPORT
+# ─────────────────────────────────────────────────────────────────────────────
+
+DUPLICATE_PARENTS_REPORT_FIELDNAMES = [
+    "Service_Name",
+    "Parent_Legacy_ID",
+    "Parent_Name",
+    "Matched_On",
+    "Parent_CRN",
+    "Parent_Slot",
+    "Linked_Child",
+]
+
+
+def _collect_intra_file_dup_groups(
+    all_rows: list,
+    service_map: "ServiceMapping",
+) -> list[list[dict]]:
+    """
+    Uses Union-Find to cluster parent profiles that appear to be the same physical
+    person (matching name + DOB + contact) but carry differing base legacy IDs.
+
+    Returns a list of clusters; each cluster is a list of occurrence dicts
+    with all fields needed for the duplicate-parent report.
+    """
+    def _base(lid: str) -> str:
+        return re.sub(r'_\d+$', '', lid) if lid else lid
+
+    profiles: list[dict] = []
+    for entry in all_rows:
+        row      = entry["row"]
+        svc_id   = row.get("ServiceID", "").strip()
+        svc_name = row.get("Service_Name", "").strip()
+        if not svc_name and service_map and service_map.is_loaded:
+            svc_name = service_map.get_name_by_xplor(svc_id) or svc_id
+
+        child_name = (
+            f"{row.get('Child_First_Name', '').strip()} "
+            f"{row.get('Child_Last_Name',  '').strip()}".strip()
+        )
+
+        for prefix in ("Parent1", "Parent2"):
+            first = row.get(f"{prefix}_First_Name", "").strip().lower()
+            last  = row.get(f"{prefix}_Last_Name",  "").strip().lower()
+            if not first and not last:
+                continue
+
+            dob = row.get(f"{prefix}_DOB", "").strip()
+
+            contacts: set[str] = set()
+            for cf in PARENT_PHONE_FIELDS_BY_PREFIX.get(prefix, []):
+                v = row.get(cf, "").strip()
+                if v:
+                    contacts.add(re.sub(r"[\s\-\(\)]", "", v).lower())
+
+            legacy_id   = row.get(f"{prefix}_Legacy_Account_ID", "").strip()
+            crn         = row.get(f"{prefix}_CRN",                "").strip()
+            parent_name = (
+                f"{row.get(f'{prefix}_First_Name', '').strip()} "
+                f"{row.get(f'{prefix}_Last_Name',  '').strip()}".strip()
+            )
+
+            profiles.append({
+                "first_name":   first,
+                "last_name":    last,
+                "dob":          dob,
+                "contacts":     contacts,
+                "legacy_id":    legacy_id,
+                "crn":          crn,
+                "service_name": svc_name,
+                "parent_name":  parent_name,
+                "parent_slot":  prefix,
+                "linked_child": child_name,
+            })
+
+    # Union-Find
+    n  = len(profiles)
+    uf = list(range(n))
+
+    def _find(x: int) -> int:
+        while uf[x] != x:
+            uf[x] = uf[uf[x]]
+            x = uf[x]
+        return x
+
+    def _union(x: int, y: int) -> None:
+        uf[_find(x)] = _find(y)
+
+    for i in range(n):
+        pa = profiles[i]
+        for j in range(i + 1, n):
+            pb = profiles[j]
+            if pa["first_name"] != pb["first_name"] or pa["last_name"] != pb["last_name"]:
+                continue
+            if not pa["dob"] or not pb["dob"] or pa["dob"] != pb["dob"]:
+                continue
+            if not (pa["contacts"] & pb["contacts"]):
+                continue
+            if pa["legacy_id"] and pb["legacy_id"] and _base(pa["legacy_id"]) == _base(pb["legacy_id"]):
+                continue
+            _union(i, j)
+
+    # Build connected components
+    components: defaultdict[int, list[dict]] = defaultdict(list)
+    for i, prof in enumerate(profiles):
+        components[_find(i)].append(prof)
+
+    # Keep only groups that contain 2+ distinct base legacy IDs
+    result: list[list[dict]] = []
+    for members in components.values():
+        if len(members) < 2:
+            continue
+        unique_bases = {_base(m["legacy_id"]) for m in members if m["legacy_id"]}
+        if len(unique_bases) < 2:
+            continue
+        result.append(members)
+
+    return result
+
+
+def write_duplicate_parents_report(
+    recorder:    "IssueRecorder",
+    output_path: str,
+    service_map: "ServiceMapping",
+    all_rows:    list,
+    row_num_map: dict | None = None,
+) -> tuple[int, int]:
+    """
+    Writes the duplicate-parent Excel report (cross_service_duplicate_parents.xlsx).
+
+    Sheet 'Duplicate Parents':
+      One row per occurrence — every service/child combination where the flagged
+      parent appears.  Rows are sorted by Parent_Name then Service_Name.
+
+    Returns (cross_service_count, intra_file_group_count).
+    """
+    _CROSS_TAG = "cross_service_duplicate_parent"
+
+    # ── Intra-file: occurrence rows derived from Union-Find clusters ───────────
+    groups      = _collect_intra_file_dup_groups(all_rows, service_map)
+    intra_count = len(groups)
+
+    detail_rows: list[dict] = []
+
+    for members in groups:
+        # Compute a representative Matched_On for the whole group
+        dob = members[0]["dob"]
+        contact_freq: dict[str, int] = {}
+        for m in members:
+            for c in m["contacts"]:
+                contact_freq[c] = contact_freq.get(c, 0) + 1
+        shared = [c for c, cnt in contact_freq.items() if cnt >= 2]
+        matched_on = f"DOB: {dob}, Contact: {shared[0]}" if shared else f"DOB: {dob}"
+
+        for m in sorted(members, key=lambda x: (x["service_name"], x["linked_child"])):
+            detail_rows.append({
+                "Service_Name":     m["service_name"],
+                "Parent_Legacy_ID": m["legacy_id"],
+                "Parent_Name":      m["parent_name"],
+                "Matched_On":       matched_on,
+                "Parent_CRN":       m["crn"],
+                "Parent_Slot":      m["parent_slot"],
+                "Linked_Child":     m["linked_child"],
+            })
+
+    # ── Cross-service: one row per recorder issue ──────────────────────────────
+    cross_issues = [i for i in recorder.issues if i.get("_tag") == _CROSS_TAG]
+    cross_count  = len(cross_issues)
+
+    row_lookup = {e["row_num"]: e for e in all_rows}
+
+    for issue in cross_issues:
+        prefix = issue.get("_parent_slot", "")
+        entry  = row_lookup.get(issue.get("Row"))
+        if entry:
+            row      = entry["row"]
+            svc_id   = row.get("ServiceID", "").strip()
+            svc_name = row.get("Service_Name", "").strip()
+            if not svc_name and service_map and service_map.is_loaded:
+                svc_name = service_map.get_name_by_xplor(svc_id) or svc_id
+            legacy_id = row.get(f"{prefix}_Legacy_Account_ID", "").strip()
+            crn       = row.get(f"{prefix}_CRN",               "").strip()
+            linked    = (
+                f"{row.get('Child_First_Name', '').strip()} "
+                f"{row.get('Child_Last_Name',  '').strip()}".strip()
+            )
+        else:
+            svc_name  = ""
+            legacy_id = ""
+            crn       = ""
+            linked    = issue.get("Child_Name", "")
+
+        detail_rows.append({
+            "Service_Name":     svc_name,
+            "Parent_Legacy_ID": legacy_id,
+            "Parent_Name":      issue.get("_parent_name", ""),
+            "Matched_On":       issue.get("_matched_on", ""),
+            "Parent_CRN":       crn,
+            "Parent_Slot":      prefix,
+            "Linked_Child":     linked,
+        })
+
+    # ── Sort and write ─────────────────────────────────────────────────────────
+    detail_df = pd.DataFrame(detail_rows, columns=DUPLICATE_PARENTS_REPORT_FIELDNAMES)
+    if not detail_df.empty:
+        detail_df = detail_df.sort_values(
+            ["Parent_Name", "Service_Name"], kind="stable"
+        ).reset_index(drop=True)
+
+    with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
+        detail_df.to_excel(writer, sheet_name="Duplicate Parents", index=False)
+
+    wb       = load_workbook(output_path)
+    dup_fill = PatternFill("solid", fgColor="FFF0E6")   # Pastel peach
+    ws       = wb["Duplicate Parents"]
+
+    _apply_header_style(ws, 1, len(DUPLICATE_PARENTS_REPORT_FIELDNAMES))
+    ws.freeze_panes = "A2"
+    ws.row_dimensions[1].height = 30
+
+    matched_col = DUPLICATE_PARENTS_REPORT_FIELDNAMES.index("Matched_On") + 1
+
+    for row in ws.iter_rows(min_row=2, max_row=ws.max_row):
+        for cell in row:
+            cell.fill = dup_fill
+        row[matched_col - 1].alignment = Alignment(wrap_text=True)
+
+    _auto_size_columns(ws)
+    wb.save(output_path)
+
+    return cross_count, intra_count
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # MAIN ORCHESTRATION — run_v2
 # ─────────────────────────────────────────────────────────────────────────────
 
 def run_v2(
-    input_path:          str,
-    service_map:         ServiceMapping,
-    output_dir:          str,
-    report_path:         str,
-    client_report_path:  str | None = None,
+    input_path:                str | None = None,
+    service_map:               "ServiceMapping | None" = None,
+    output_dir:                str = "output",
+    report_path:               str = "output/validation_audit_report_v2.xlsx",
+    client_report_path:        str | None = None,
+    existing_file_paths:       list[str] | None = None,
+    cross_service_report_path: str | None = None,
+    input_paths:               list[str] | None = None,
 ) -> IssueRecorder:
     """
     Full v2 pipeline:
-      1. Load input CSV
-      2. Apply transformations (service ID mapping, state normalisation, email dedup)
+      1. Load input CSV(s) — supports a list via input_paths for multi-file runs
+      2. Apply transformations (service ID, legacy IDs, state, email dedup,
+         phone leading-zero, consents default)
       3. Run all v1 validation checks against the transformed data
-      4. Write split CSVs (one per service)
-      5. Write Excel audit report (one tab per service + Summary)
-      6. Write client-facing Excel report (duplicate parent emails + redundant ECs)
+      4. Cross-check parents against existing-service files (if provided)
+      5. Write split CSVs (one per service, named {Service_Name}_families_import.csv)
+      6. Write Excel audit report (one tab per service + Summary)
+      7. Write client-facing Excel report (duplicate parent emails + redundant ECs)
+      8. Write cross-service/intra-file duplicate parent report
+
+    input_paths               — list of CSV/XLSX paths to load and merge (preferred
+                                for multi-file runs; overrides input_path when given).
+    existing_file_paths       — optional list of CSV/XLSX paths from services already
+                                in Xplor, used to detect duplicate parents.
+    cross_service_report_path — output path for the duplicate-parents report.
 
     Returns the IssueRecorder containing all issues and transformation logs.
     """
-    recorder  = IssueRecorder()
-    all_rows: list[dict] = []
-    headers:  set        = set()
-    fieldnames: list[str] = []
+    recorder    = IssueRecorder()
+    all_rows:   list[dict] = []
+    headers:    set        = set()
+    fieldnames: list[str]  = []
 
-    print(f"\n  Loading rows     ...", end="", flush=True)
-    try:
-        raw_rows, fieldnames = load_input_file(input_path)
-    except Exception as exc:
-        print(f"\nERROR: Could not read input file: {exc}")
+    # Ensure we always have a ServiceMapping object (may be a no-op stub)
+    svc_map: ServiceMapping = service_map if service_map is not None else ServiceMapping.__new__(ServiceMapping)
+    if service_map is None:
+        svc_map._loaded = False
+        svc_map._qk_to_xplor   = {}
+        svc_map._qk_to_name    = {}
+        svc_map._xplor_to_name = {}
+        svc_map._name_to_xplor = {}
+
+    # ── Load input rows (single path or merged list) ──────────────────────────
+    paths_to_load: list[str] = input_paths if input_paths else ([input_path] if input_path else [])
+    if not paths_to_load:
+        print("\nERROR: No input file(s) specified.")
         sys.exit(1)
 
-    headers = set(fieldnames)
-    for row_idx, raw_row in enumerate(raw_rows, start=2):
-        all_rows.append({
-            "row_num":    row_idx,
-            "child_name": get_child_name(raw_row),
-            "row":        raw_row,
-        })
+    print(f"\n  Loading rows     ...", end="", flush=True)
+    row_offset = 2   # row 1 = header; data rows start at 2 per file
+    for path in paths_to_load:
+        try:
+            raw_rows, fns = load_input_file(path)
+        except Exception as exc:
+            print(f"\nERROR: Could not read '{path}': {exc}")
+            sys.exit(1)
+        if not fieldnames:
+            fieldnames = fns
+        for raw_row in raw_rows:
+            all_rows.append({
+                "row_num":    row_offset,
+                "child_name": get_child_name(raw_row),
+                "row":        raw_row,
+            })
+            row_offset += 1
 
-    print(f" done.  {len(all_rows)} rows loaded.")
+    headers = set(fieldnames)
+    print(f" done.  {len(all_rows)} rows loaded from {len(paths_to_load)} file(s).")
     print(f"  Columns detected : {len(headers)}")
 
     # ── Pass 1: Service ID transformation ────────────────────────────────────
@@ -1806,9 +2543,20 @@ def run_v2(
     for entry in all_rows:
         transform_service_id(
             entry["row"], entry["row_num"], entry["child_name"],
-            recorder, service_map,
+            recorder, svc_map,
         )
     print(" done.")
+
+    # ── Filter: keep only rows whose service ID resolved to a known Xplor ID ──
+    if svc_map.is_loaded:
+        before = len(all_rows)
+        all_rows = [
+            e for e in all_rows
+            if svc_map.is_valid_xplor_id(e["row"].get("ServiceID", "").strip())
+        ]
+        skipped = before - len(all_rows)
+        if skipped:
+            print(f"  Skipped {skipped} row(s) whose service ID is not in serviceIDs.csv.")
 
     # ── Pass 2: Build per-service state fallbacks then normalise states ───────
     print("  Normalising state fields     ...", end="", flush=True)
@@ -1847,7 +2595,34 @@ def run_v2(
         )
     print(" done.")
 
-    # ── Pass 6: Per-row validation ─────────────────────────────────────────────
+    # ── Pass 6: Legacy ID prefixing (child + parents, P1==P2 dedup) ──────────
+    print("  Prefixing legacy IDs         ...", end="", flush=True)
+    for entry in all_rows:
+        transform_legacy_ids(
+            entry["row"], entry["row_num"], entry["child_name"],
+            recorder, headers,
+        )
+    print(" done.")
+
+    # ── Pass 7: Phone leading-zero fix ────────────────────────────────────────
+    print("  Fixing phone leading zeros   ...", end="", flush=True)
+    for entry in all_rows:
+        transform_phone_leading_zero(
+            entry["row"], entry["row_num"], entry["child_name"],
+            recorder, headers,
+        )
+    print(" done.")
+
+    # ── Pass 8: Consents_Photos blank → 'N' ──────────────────────────────────
+    print("  Defaulting blank consents    ...", end="", flush=True)
+    for entry in all_rows:
+        transform_consents_photos(
+            entry["row"], entry["row_num"], entry["child_name"],
+            recorder, headers,
+        )
+    print(" done.")
+
+    # ── Pass 9: Per-row validation ────────────────────────────────────────────
     print("  Running per-row validation   ...", end="", flush=True)
     for entry in all_rows:
         row        = entry["row"]
@@ -1870,7 +2645,6 @@ def run_v2(
         validate_service_id(row, row_num, child_name, recorder, headers)
         validate_paired_name_fields(row, row_num, child_name, recorder, headers)
         validate_waitlist_logic(row, row_num, child_name, recorder, headers)
-        validate_crn_child_parent_equality(row, row_num, child_name, recorder, headers)
         validate_future_dob(row, row_num, child_name, recorder, headers)
         validate_enrolment_date_not_before_dob(row, row_num, child_name, recorder, headers)
         validate_medicare_number(row, row_num, child_name, recorder, headers)
@@ -1879,7 +2653,7 @@ def run_v2(
 
     print(" done.")
 
-    # ── Pass 7: Cross-row validation ──────────────────────────────────────────
+    # ── Pass 10: Cross-row validation ─────────────────────────────────────────
     print("  Running cross-row checks     ...", end="", flush=True)
     check_duplicates(all_rows, recorder, headers)
     check_duplicate_parent_emails(all_rows, recorder, headers)
@@ -1887,20 +2661,40 @@ def run_v2(
     check_enrolment_parent_crn_consistency(all_rows, recorder, headers)
     print(" done.")
 
-    # ── Pass 8: Write split CSVs ──────────────────────────────────────────────
-    print("\n  Writing import-ready CSV files:")
-    _, row_num_map = write_split_csvs(all_rows, fieldnames, output_dir)
-
-    # ── Pass 9: Write Excel report ────────────────────────────────────────────
-    print(f"\n  Writing audit report         ...", end="", flush=True)
-    write_excel_report(recorder, all_rows, report_path, service_map, row_num_map)
+    # ── Pass 10b: Intra-file duplicate parent check ───────────────────────────
+    print("  Checking duplicate parents   ...", end="", flush=True)
+    check_intra_file_parent_duplicates(all_rows, recorder)
     print(" done.")
 
-    # ── Pass 10: Write client-facing report ───────────────────────────────────
+    # ── Pass 10c: Cross-service duplicate parent check (vs existing files) ────
+    if existing_file_paths:
+        print("  Checking existing svc dupes  ...", end="", flush=True)
+        existing_profiles = load_existing_parent_profiles_from_paths(existing_file_paths)
+        check_cross_service_parent_duplicates(all_rows, existing_profiles, recorder)
+        print(f" done.  ({len(existing_profiles)} existing parent profile(s) checked)")
+
+    # ── Pass 11: Write split CSVs ─────────────────────────────────────────────
+    print("\n  Writing import-ready CSV files:")
+    _, row_num_map = write_split_csvs(all_rows, fieldnames, output_dir, svc_map)
+
+    # ── Pass 12: Write Excel audit report ────────────────────────────────────
+    print(f"\n  Writing audit report         ...", end="", flush=True)
+    write_excel_report(recorder, all_rows, report_path, svc_map, row_num_map)
+    print(" done.")
+
+    # ── Pass 13: Write client-facing report ──────────────────────────────────
     if client_report_path:
         print(f"  Writing client report        ...", end="", flush=True)
-        write_client_excel_report(recorder, all_rows, client_report_path, service_map, row_num_map)
+        write_client_excel_report(recorder, all_rows, client_report_path, svc_map, row_num_map)
         print(" done.")
+
+    # ── Pass 14: Write duplicate parents report ───────────────────────────────
+    if cross_service_report_path:
+        print(f"  Writing dup-parents report   ...", end="", flush=True)
+        cross_n, intra_n = write_duplicate_parents_report(
+            recorder, cross_service_report_path, svc_map, all_rows,
+        )
+        print(f" done.  (cross-service: {cross_n}, within-upload: {intra_n} group(s))")
 
     return recorder
 
@@ -1911,9 +2705,11 @@ def run_v2(
 # ─────────────────────────────────────────────────────────────────────────────
 
 def run_v2_from_bytes(
-    file_bytes:    bytes,
-    filename:      str,
-    service_map:   ServiceMapping,
+    file_bytes:       bytes,
+    filename:         str,
+    service_map:      ServiceMapping,
+    existing_files:   list[tuple[bytes, str]] | None = None,
+    include_waitlist: bool = True,
 ) -> tuple["IssueRecorder", list[dict], list[str]]:
     """
     In-memory variant of run_v2 — accepts raw file bytes (CSV or XLSX) from
@@ -1922,9 +2718,13 @@ def run_v2_from_bytes(
     caller to handle output as needed.
 
     Args:
-        file_bytes  — raw bytes of the uploaded file
-        filename    — original filename including extension (used to detect format)
-        service_map — loaded ServiceMapping instance
+        file_bytes        — raw bytes of the uploaded file
+        filename          — original filename including extension (used to detect format)
+        service_map       — loaded ServiceMapping instance
+        existing_files    — optional list of (bytes, filename) tuples from other services
+                            already in Xplor, used to detect duplicate parents
+        include_waitlist  — when False, only rows with Status == 'active' are processed;
+                            Waitlist rows are dropped before validation and output
     """
     recorder:   IssueRecorder = IssueRecorder()
     all_rows:   list[dict]    = []
@@ -1939,13 +2739,29 @@ def run_v2_from_bytes(
             "row":        raw_row,
         })
 
+    # Import scope filter — drop Waitlist rows when the user selects Active only
+    if not include_waitlist:
+        all_rows = [
+            e for e in all_rows
+            if e["row"].get("Status", "").strip().lower() != "waitlist"
+        ]
+
     # Transformations
     for entry in all_rows:
         transform_service_id(entry["row"], entry["row_num"], entry["child_name"], recorder, service_map)
 
+    # Filter to only rows whose service mapped to a known Xplor ID
+    if service_map.is_loaded:
+        all_rows = [
+            e for e in all_rows
+            if service_map.is_valid_xplor_id(e["row"].get("ServiceID", "").strip())
+        ]
+
     service_fallbacks = build_service_state_fallbacks(all_rows)
     for entry in all_rows:
         transform_states(entry["row"], entry["row_num"], entry["child_name"], recorder, service_fallbacks)
+
+    for entry in all_rows:
         transform_email_dedup(entry["row"], entry["row_num"], entry["child_name"], recorder, headers)
 
     for entry in all_rows:
@@ -1953,6 +2769,15 @@ def run_v2_from_bytes(
 
     for entry in all_rows:
         transform_blank_first_names(entry["row"], entry["row_num"], entry["child_name"], recorder, headers)
+
+    for entry in all_rows:
+        transform_legacy_ids(entry["row"], entry["row_num"], entry["child_name"], recorder, headers)
+
+    for entry in all_rows:
+        transform_phone_leading_zero(entry["row"], entry["row_num"], entry["child_name"], recorder, headers)
+
+    for entry in all_rows:
+        transform_consents_photos(entry["row"], entry["row_num"], entry["child_name"], recorder, headers)
 
     # Per-row validation
     for entry in all_rows:
@@ -1973,7 +2798,6 @@ def run_v2_from_bytes(
         validate_service_id(row, row_num, child_name, recorder, headers)
         validate_paired_name_fields(row, row_num, child_name, recorder, headers)
         validate_waitlist_logic(row, row_num, child_name, recorder, headers)
-        validate_crn_child_parent_equality(row, row_num, child_name, recorder, headers)
         validate_future_dob(row, row_num, child_name, recorder, headers)
         validate_enrolment_date_not_before_dob(row, row_num, child_name, recorder, headers)
         validate_medicare_number(row, row_num, child_name, recorder, headers)
@@ -1986,6 +2810,14 @@ def run_v2_from_bytes(
     check_parent_crn_email_registry(all_rows, recorder, headers)
     check_enrolment_parent_crn_consistency(all_rows, recorder, headers)
 
+    # Intra-file duplicate parent check (always runs)
+    check_intra_file_parent_duplicates(all_rows, recorder)
+
+    # Cross-service duplicate parent check (only when existing files provided)
+    if existing_files:
+        existing_profiles = load_existing_parent_profiles_from_bytes(existing_files)
+        check_cross_service_parent_duplicates(all_rows, existing_profiles, recorder)
+
     return recorder, all_rows, fieldnames
 
 
@@ -1997,9 +2829,8 @@ if __name__ == "__main__":
     script_dir = Path(__file__).parent
 
     # ── Folder layout ────────────────────────────────────────────────────────
-    # input/         — place migration CSV file(s) here before running
-    # output/        — all generated files are written here
-    # serviceIDs.csv — sits alongside this script (or pass as argv[2])
+    # input/              — place migration CSV file(s) AND serviceIDs.csv here
+    # output/             — all generated files are written here
     input_folder  = script_dir / "input"
     output_folder = script_dir / "output"
 
@@ -2007,56 +2838,44 @@ if __name__ == "__main__":
     input_folder.mkdir(exist_ok=True)
     output_folder.mkdir(exist_ok=True)
 
-    # ── Locate the input CSV ─────────────────────────────────────────────────
+    # ── Locate input files ────────────────────────────────────────────────────
     if len(sys.argv) >= 2:
-        # Explicit path provided on the command line — respect it as-is
-        input_csv = sys.argv[1]
+        # Explicit path(s) on the command line (space-separated)
+        input_csvs = [sys.argv[1]]
     else:
-        # Auto-discover: find the single CSV or XLSX inside the input/ folder.
-        # serviceIDs.csv is excluded so the mapping file is never treated as input.
-        candidates = [
-            f for f in sorted(input_folder.iterdir())
+        # Auto-discover all CSV/XLSX files in input/ (excluding serviceIDs.csv)
+        candidates = sorted(
+            f for f in input_folder.iterdir()
             if f.suffix.lower() in (".csv", ".xlsx", ".xls")
             and f.name.lower() != "serviceids.csv"
-        ]
-        if len(candidates) == 0:
+        )
+        if not candidates:
             print()
             print("ERROR: No CSV or XLSX file found in the input folder:")
             print(f"  {input_folder}")
             print()
-            print("Please place your migration file (CSV or XLSX) in the 'input'")
-            print("folder and re-run.")
+            print("Please place your QikKids export CSV(s) in the 'input' folder and re-run.")
             print()
             sys.exit(1)
-        if len(candidates) > 1:
-            print()
-            print("ERROR: Multiple input files found in the input folder.")
-            print("Please keep only one file in 'input/', or pass the path directly:")
-            print()
-            print("  Usage: py validator_v2.py <input_file> [service_map_csv]")
-            print()
-            print("Files found:")
-            for f in sorted(candidates):
-                print(f"  {f.name}")
-            print()
-            sys.exit(1)
-        input_csv = str(candidates[0])
+        input_csvs = [str(f) for f in candidates]
 
     # ── Locate the service mapping file ──────────────────────────────────────
     if len(sys.argv) >= 3:
         service_map_csv = sys.argv[2]
     else:
-        service_map_csv = str(script_dir / "serviceIDs.csv")
+        service_map_csv = str(input_folder / "serviceIDs.csv")
 
     # ── Output paths (all files written to output/) ───────────────────────────
-    report_path        = str(output_folder / "validation_audit_report_v2.xlsx")
-    client_report_path = str(output_folder / "client_audit_report.xlsx")
+    report_path               = str(output_folder / "validation_audit_report_v2.xlsx")
+    client_report_path        = str(output_folder / "client_audit_report.xlsx")
+    cross_service_report_path = str(output_folder / "cross_service_duplicate_parents.xlsx")
 
     print()
     print("=" * 65)
     print("  Xplor Data Migration — Validator & Transformer  v2.0")
     print("=" * 65)
-    print(f"  Input CSV        : {input_csv}")
+    for p in input_csvs:
+        print(f"  Input file       : {p}")
     print(f"  Service map      : {service_map_csv}")
     print(f"  Output folder    : {output_folder}")
     print(f"  Audit report     : {report_path}")
@@ -2065,11 +2884,12 @@ if __name__ == "__main__":
 
     svc_map  = ServiceMapping(service_map_csv)
     recorder = run_v2(
-        input_path         = input_csv,
-        service_map        = svc_map,
-        output_dir         = str(output_folder),
-        report_path        = report_path,
-        client_report_path = client_report_path,
+        input_paths               = input_csvs,
+        service_map               = svc_map,
+        output_dir                = str(output_folder),
+        report_path               = report_path,
+        client_report_path        = client_report_path,
+        cross_service_report_path = cross_service_report_path,
     )
 
     errors   = recorder.error_count()
