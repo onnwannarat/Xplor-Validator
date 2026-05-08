@@ -10,23 +10,14 @@ import json
 import operator
 import sys
 import textwrap
+import zoneinfo
 from collections import defaultdict
 from collections.abc import Iterable, Iterator, Mapping, Sequence
 from functools import partial
 from importlib.metadata import version as importlib_version
 from itertools import chain, zip_longest
 from math import ceil
-from typing import (
-    TYPE_CHECKING,
-    Any,
-    Final,
-    Generic,
-    Literal,
-    TypeVar,
-    Union,
-    cast,
-    overload,
-)
+from typing import TYPE_CHECKING, Any, Final, Generic, Literal, TypeVar, cast, overload
 
 import jsonschema
 import jsonschema.exceptions
@@ -42,7 +33,7 @@ else:
 
 if TYPE_CHECKING:
     from types import ModuleType
-    from typing import ClassVar
+    from typing import ClassVar, TypeAlias
 
     from jsonschema.exceptions import ValidationError
     from referencing import Registry
@@ -58,10 +49,6 @@ if TYPE_CHECKING:
         from typing import Never, Self
     else:
         from typing_extensions import Never, Self
-    if sys.version_info >= (3, 10):
-        from typing import TypeAlias
-    else:
-        from typing_extensions import TypeAlias
 
     _OptionalModule: TypeAlias = "ModuleType | None"
 
@@ -444,7 +431,7 @@ def _deduplicate_enum_errors(errors: ValidationErrorList) -> ValidationErrorList
         # which is why we can use join below
         value_strings = [",".join(err.validator_value) for err in errors]  # type: ignore
         longest_enums: ValidationErrorList = []
-        for value_str, err in zip(value_strings, errors):
+        for value_str, err in zip(value_strings, errors, strict=False):
             if not _contained_at_start_of_one_of_other_values(value_str, value_strings):
                 longest_enums.append(err)
         errors = longest_enums
@@ -524,7 +511,7 @@ def _from_date_datetime(obj: dt.date | dt.datetime, /) -> dict[str, Any]:
                 hours=obj.hour, minutes=obj.minute, seconds=obj.second, milliseconds=ms
             )
         if tzinfo := obj.tzinfo:
-            if tzinfo is dt.timezone.utc:
+            if tzinfo in [dt.timezone.utc, zoneinfo.ZoneInfo("UTC")]:
                 result["utc"] = True
             else:
                 msg = (
@@ -771,7 +758,8 @@ See the help for `{altair_cls.__name__}` to read the full description of these p
                 (name, len(name))
                 for name in param_dict_keys
                 if name not in {"kwds", "self"}
-            ]
+            ],
+            strict=False,
         )
         # Worst case scenario with the same longest param name in the same
         # row for all columns
@@ -992,7 +980,7 @@ class UndefinedType:
 
 Undefined = UndefinedType()
 T = TypeVar("T")
-Optional: TypeAlias = Union[T, UndefinedType]
+Optional: TypeAlias = T | UndefinedType
 """One of ``T`` specified type(s), or the ``Undefined`` singleton.
 
 Examples
@@ -1220,7 +1208,7 @@ class SchemaBase:
             kwds = self._args[0]
         elif not self._args:
             kwds = self._kwds.copy()
-            exclude = {*ignore, "shorthand"}
+            exclude = {*ignore, "shorthand", "_cached_hash"}
             if parsed := context.pop("parsed_shorthand", None):
                 kwds = _replace_parsed_shorthand(parsed, kwds)
             kwds = {k: v for k, v in kwds.items() if k not in exclude}
@@ -1246,6 +1234,7 @@ class SchemaBase:
         *,
         ignore: list[str] | None = None,
         context: dict[str, Any] | None = None,
+        ensure_ascii: bool = False,
         **kwargs,
     ) -> str:
         """
@@ -1263,6 +1252,9 @@ class SchemaBase:
             A list of keys to ignore.
         context : dict[str, Any], optional
             A context dictionary.
+        ensure_ascii : bool, optional
+            If False (default), allow UTF-8 characters in the output.
+            If True, escape non-ASCII characters.
         **kwargs
             Additional keyword arguments are passed to ``json.dumps()``
 
@@ -1281,7 +1273,9 @@ class SchemaBase:
         if context is None:
             context = {}
         dct = self.to_dict(validate=validate, ignore=ignore, context=context)
-        return json.dumps(dct, indent=indent, sort_keys=sort_keys, **kwargs)
+        return json.dumps(
+            dct, indent=indent, sort_keys=sort_keys, ensure_ascii=ensure_ascii, **kwargs
+        )
 
     @classmethod
     def _default_wrapper_classes(cls) -> Iterator[type[SchemaBase]]:
@@ -1693,10 +1687,10 @@ VERSIONS: Mapping[
     str,
 ] = {
     "vega-datasets": "v3.2.1",
-    "vega-embed": "v7",
-    "vega-lite": "v6.1.0",
+    "vega-embed": "v7.0.2",
+    "vega-lite": "v6.4.1",
     "vegafusion": "2.0.3",
-    "vl-convert-python": "1.8.0",
+    "vl-convert-python": "1.9.0",
 }
 """
 Version pins for non-``python`` `vega projects`_.
