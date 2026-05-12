@@ -11,7 +11,7 @@ import typing as t
 import warnings
 from collections.abc import Mapping, Sequence
 from copy import deepcopy as _deepcopy
-from typing import TYPE_CHECKING, Any, Literal, TypeAlias, TypeVar, Union, overload
+from typing import TYPE_CHECKING, Any, Literal, TypeVar, Union, overload
 
 import jsonschema
 import narwhals.stable.v1 as nw
@@ -54,6 +54,10 @@ if sys.version_info >= (3, 11):
     from typing import LiteralString
 else:
     from typing_extensions import LiteralString
+if sys.version_info >= (3, 10):
+    from typing import TypeAlias
+else:
+    from typing_extensions import TypeAlias
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator
@@ -129,6 +133,7 @@ if TYPE_CHECKING:
         InlineDataset,
         IntervalSelectionConfig,
         JoinAggregateFieldDef,
+        LayerRepeatMapping,
         LookupSelection,
         NamedData,
         ParameterName,
@@ -149,8 +154,6 @@ if TYPE_CHECKING:
         Vector3number,
         WindowFieldDef,
     )
-
-from .schema.core import LayerRepeatMapping
 
 __all__ = [
     "TOPLEVEL_ONLY_KEYS",
@@ -203,13 +206,13 @@ __all__ = [
     "when",
 ]
 
-ChartDataType: TypeAlias = Optional[DataType | core.Data | str | core.Generator]
+ChartDataType: TypeAlias = Optional[Union[DataType, core.Data, str, core.Generator]]
 _TSchemaBase = TypeVar("_TSchemaBase", bound=SchemaBase)
 
 
 # ------------------------------------------------------------------------
 # Data Utilities
-def _dataset_name(values: dict[str, Any] | list[str] | InlineDataset) -> str:
+def _dataset_name(values: dict[str, Any] | list | InlineDataset) -> str:
     """
     Generate a unique hash of the data.
 
@@ -241,7 +244,7 @@ def _consolidate_data(
     This function will modify context in-place, and return a new version of data
     """
     values: Any = Undefined
-    kwds: dict = {}
+    kwds = {}
 
     if isinstance(data, core.InlineData):
         if utils.is_undefined(data.name) and not utils.is_undefined(data.values):
@@ -251,7 +254,7 @@ def _consolidate_data(
                 values = data.values
             kwds = {"format": data.format}
 
-    elif isinstance(data, dict) and ("name" not in data) and ("values" in data):
+    elif isinstance(data, dict) and "name" not in data and "values" in data:
         values = data["values"]
         kwds = {k: v for k, v in data.items() if k != "values"}
 
@@ -341,7 +344,7 @@ class FacetMapping(core.FacetMapping):
         row: Optional[str | FacetFieldDef | Row] = Undefined,
         **kwargs: Any,
     ) -> None:
-        super().__init__(column=column, row=row, **kwargs)  # type: ignore
+        super().__init__(column=column, row=row, **kwargs)  # type: ignore[arg-type]
 
     def to_dict(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
         copy = self.copy(deep=False)
@@ -573,7 +576,9 @@ def check_fields_and_encodings(parameter: Parameter, field_name: str) -> bool:
 
 # -------------------------------------------------------------------------
 # Tools for working with conditions
-_TestPredicateType: TypeAlias = str | _expr_core.Expression | core.PredicateComposition
+_TestPredicateType: TypeAlias = Union[
+    str, _expr_core.Expression, core.PredicateComposition
+]
 """https://vega.github.io/vega-lite/docs/predicate.html"""
 
 _PredicateType: TypeAlias = Union[
@@ -585,12 +590,12 @@ _PredicateType: TypeAlias = Union[
 ]
 """Permitted types for `predicate`."""
 
-_ComposablePredicateType: TypeAlias = (
-    _expr_core.OperatorMixin | core.PredicateComposition
-)
+_ComposablePredicateType: TypeAlias = Union[
+    _expr_core.OperatorMixin, core.PredicateComposition
+]
 """Permitted types for `&` reduced predicates."""
 
-_StatementType: TypeAlias = SchemaBase | Map | str
+_StatementType: TypeAlias = Union[SchemaBase, Map, str]
 """Permitted types for `if_true`/`if_false`.
 
 In python terms:
@@ -690,13 +695,13 @@ def _condition_to_selection(
         if isinstance(if_false, str):
             if_false = utils.parse_shorthand(if_false)
             if_false.update(kwargs)
-        selection = _Conditional(condition=cond_mutable, **if_false)  # type: ignore
+        selection = _Conditional(condition=cond_mutable, **if_false)  # type: ignore[typeddict-item]
     else:
         raise TypeError(if_false)
     return selection
 
 
-class _ConditionExtra(TypedDict, closed=True, total=False):  # type: ignore
+class _ConditionExtra(TypedDict, closed=True, total=False):  # type: ignore[call-arg]
     # https://peps.python.org/pep-0728/
     # Likely a Field predicate
     empty: Optional[bool]
@@ -722,7 +727,7 @@ but not a `Conditional Value`_.
 """
 
 
-class _ConditionClosed(TypedDict, closed=True, total=False):  # type: ignore
+class _ConditionClosed(TypedDict, closed=True, total=False):  # type: ignore[call-arg]
     # https://peps.python.org/pep-0728/
     # Parameter {"param", "value", "empty"}
     # Predicate {"test", "value"}
@@ -761,7 +766,7 @@ class _Conditional(TypedDict, t.Generic[_C], total=False):
     value: Any
 
 
-IntoCondition: TypeAlias = ConditionLike | _Conditional[Any]
+IntoCondition: TypeAlias = Union[ConditionLike, _Conditional[Any]]
 """
 Anything that can be converted into a conditional encoding or property.
 
@@ -771,7 +776,7 @@ Represents all outputs from `when-then-otherwise` conditions, which are not ``Sc
 """
 
 
-class _Value(TypedDict, closed=True, total=False):  # type: ignore
+class _Value(TypedDict, closed=True, total=False):  # type: ignore[call-arg]
     # https://peps.python.org/pep-0728/
     value: Required[Any]
     __extra_items__: Any
@@ -915,7 +920,7 @@ def _parse_otherwise(
     selection: SchemaBase | _Conditional[Any]
     if isinstance(statement, SchemaBase):
         selection = statement.copy()
-        conditions.update(**kwds)  # type: ignore
+        conditions.update(**kwds)  # type: ignore[call-arg]
         selection.condition = conditions["condition"]
     else:
         if not isinstance(statement, Mapping):
@@ -1394,7 +1399,7 @@ def when(
 
 def value(value: Any, **kwargs: Any) -> _Value:
     """Specify a value for use in an encoding."""
-    return _Value(value=value, **kwargs)  # type: ignore
+    return _Value(value=value, **kwargs)  # type: ignore[typeddict-item]
 
 
 def _make_param_obj(
@@ -1402,7 +1407,7 @@ def _make_param_obj(
     value: Optional[Any],
     bind: Optional[Binding],
     expr: Optional[str | Expr | Expression],
-    kwds: dict[str, Any],
+    kwds: dict,
 ) -> tuple[
     VariableParameter | TopLevelSelectionParameter | SelectionParameter,
     Literal["variable", "selection"],
@@ -1495,7 +1500,7 @@ def param(
         parameter.name = str(name)
         if parameter.param is not Undefined:
             param_obj = t.cast(
-                "VariableParameter | TopLevelSelectionParameter | SelectionParameter",
+                "Union[VariableParameter, TopLevelSelectionParameter, SelectionParameter]",
                 parameter.param,
             )
             param_obj.name = str(name)
@@ -1506,7 +1511,7 @@ def param(
         parameter._name_is_hashed = True
         if parameter.param is not Undefined:
             param_obj = t.cast(
-                "VariableParameter | TopLevelSelectionParameter | SelectionParameter",
+                "Union[VariableParameter, TopLevelSelectionParameter, SelectionParameter]",
                 parameter.param,
             )
             param_obj.name = hash_name
@@ -1584,14 +1589,16 @@ You can also provide a sequence of mappings between ``encodings`` or ``fields`` 
 
 _SelectionIntervalValueMap: TypeAlias = Mapping[
     SingleDefUnitChannel_T,
-    tuple[bool, bool]
-    | tuple[float, float]
-    | tuple[str, str]
-    | tuple["Temporal | DateTime", "Temporal | DateTime"]
-    | Sequence[bool]
-    | Sequence[float]
-    | Sequence[str]
-    | Sequence["Temporal | DateTime"],
+    Union[
+        tuple[bool, bool],
+        tuple[float, float],
+        tuple[str, str],
+        tuple["Temporal | DateTime", "Temporal | DateTime"],
+        Sequence[bool],
+        Sequence[float],
+        Sequence[str],
+        Sequence["Temporal | DateTime"],
+    ],
 ]
 """
 Interval selections are initialized with a mapping between ``encodings`` to **values**:
@@ -1904,25 +1911,25 @@ def binding(
     )
 
 
-@utils.use_signature_func(core.BindCheckbox)
+@utils.use_signature(core.BindCheckbox)
 def binding_checkbox(**kwargs: Any) -> BindCheckbox:
     """A checkbox binding."""
     return core.BindCheckbox(input="checkbox", **kwargs)
 
 
-@utils.use_signature_func(core.BindRadioSelect)
+@utils.use_signature(core.BindRadioSelect)
 def binding_radio(**kwargs: Any) -> BindRadioSelect:
     """A radio button binding."""
     return core.BindRadioSelect(input="radio", **kwargs)
 
 
-@utils.use_signature_func(core.BindRadioSelect)
+@utils.use_signature(core.BindRadioSelect)
 def binding_select(**kwargs: Any) -> BindRadioSelect:
     """A select binding."""
     return core.BindRadioSelect(input="select", **kwargs)
 
 
-@utils.use_signature_func(core.BindRange)
+@utils.use_signature(core.BindRange)
 def binding_range(**kwargs: Any) -> BindRange:
     """A range binding."""
     return core.BindRange(input="range", **kwargs)
@@ -2165,7 +2172,6 @@ class TopLevelMixin(mixins.ConfigMethodMixin):
         format: Literal["vega-lite", "vega"] = "vega-lite",
         ignore: list[str] | None = None,
         context: dict[str, Any] | None = None,
-        ensure_ascii: bool = False,
         **kwargs: Any,
     ) -> str:
         """
@@ -2187,9 +2193,6 @@ class TopLevelMixin(mixins.ConfigMethodMixin):
             A list of keys to ignore.
         context : dict[str, Any], optional
             A context dictionary.
-        ensure_ascii : bool, optional
-            If False (default), allow UTF-8 characters in the output.
-            If True, escape non-ASCII characters.
         **kwargs
             Additional keyword arguments are passed to ``json.dumps()``
 
@@ -2210,20 +2213,14 @@ class TopLevelMixin(mixins.ConfigMethodMixin):
         spec = self.to_dict(
             validate=validate, format=format, ignore=ignore, context=context
         )
-        return json.dumps(
-            spec,
-            indent=indent,
-            sort_keys=sort_keys,
-            ensure_ascii=ensure_ascii,
-            **kwargs,
-        )
+        return json.dumps(spec, indent=indent, sort_keys=sort_keys, **kwargs)
 
     def to_html(
         self,
         base_url: str = "https://cdn.jsdelivr.net/npm",
         output_div: str = "vis",
-        embed_options: dict[str, Any] | None = None,
-        json_kwds: dict[str, Any] | None = None,
+        embed_options: dict | None = None,
+        json_kwds: dict | None = None,
         fullhtml: bool = True,
         requirejs: bool = False,
         inline: bool = False,
@@ -2324,7 +2321,7 @@ class TopLevelMixin(mixins.ConfigMethodMixin):
 
     def save(
         self,
-        fp: str | Path | IO[Any],
+        fp: str | Path | IO,
         format: Literal["json", "html", "png", "svg", "pdf"] | None = None,
         override_data_transformer: bool = True,
         scale_factor: float = 1.0,
@@ -2332,8 +2329,8 @@ class TopLevelMixin(mixins.ConfigMethodMixin):
         vegalite_version: str = VEGALITE_VERSION,
         vega_version: str = VEGA_VERSION,
         vegaembed_version: str = VEGAEMBED_VERSION,
-        embed_options: dict[str, Any] | None = None,
-        json_kwds: dict[str, Any] | None = None,
+        embed_options: dict | None = None,
+        json_kwds: dict | None = None,
         engine: str | None = None,
         inline: bool = False,
         **kwargs: Any,
@@ -2424,7 +2421,7 @@ class TopLevelMixin(mixins.ConfigMethodMixin):
         return f"alt.{self.__class__.__name__}(...)"
 
     # Layering and stacking
-    def __add__(self, other: ChartType) -> LayerChart | FacetChart:
+    def __add__(self, other: ChartType) -> LayerChart:
         if not is_chart_type(other):
             msg = "Only Chart objects can be layered."
             raise ValueError(msg)
@@ -3796,7 +3793,7 @@ class TopLevelMixin(mixins.ConfigMethodMixin):
 
     # Display-related methods
 
-    def _repr_mimebundle_(self, *args: Any, **kwds: Any) -> MimeBundleType | None:  # type:ignore
+    def _repr_mimebundle_(self, *args, **kwds) -> MimeBundleType | None:  # type:ignore[return]  # noqa: ANN002, ANN003
         """Return a MIME bundle for display in Jupyter frontends."""
         # Catch errors explicitly to get around issues in Jupyter frontend
         # see https://github.com/ipython/ipython/issues/11038
@@ -3813,7 +3810,7 @@ class TopLevelMixin(mixins.ConfigMethodMixin):
         self,
         renderer: Optional[Literal["canvas", "svg"]] = Undefined,
         theme: Optional[str] = Undefined,
-        actions: Optional[bool | dict[str, Any]] = Undefined,
+        actions: Optional[bool | dict] = Undefined,
         **kwargs: Any,
     ) -> None:
         """
@@ -4063,12 +4060,8 @@ class Chart(
         data: Optional[ChartDataType] = Undefined,
         encoding: Optional[FacetedEncoding] = Undefined,
         mark: Optional[AnyMark | Mark_T | CompositeMark_T] = Undefined,
-        width: Optional[
-            float | dict[str, Any] | Step | Literal["container"]
-        ] = Undefined,
-        height: Optional[
-            float | dict[str, Any] | Step | Literal["container"]
-        ] = Undefined,
+        width: Optional[float | dict | Step | Literal["container"]] = Undefined,
+        height: Optional[float | dict | Step | Literal["container"]] = Undefined,
         **kwargs: Any,
     ) -> None:
         super().__init__(
@@ -4082,11 +4075,6 @@ class Chart(
 
     def _compute_hash(self) -> str:
         """Compute a deterministic hash of the chart specification."""
-        # Check if we have a cached hash from before data was hoisted
-        cached_hash = self._kwds.get("_cached_hash", None)
-        if cached_hash is not None:
-            return cached_hash
-
         # Get data name if available, otherwise use data object
         data = getattr(self, "data", None)
         if data is not None and hasattr(data, "name") and data.name is not None:
@@ -4175,12 +4163,7 @@ class Chart(
         - *Technical*: ``ignore`` will **not** be passed to child :meth:`.to_dict()`.
         """
         context = context or {}
-        kwds: Map = {
-            "validate": validate,
-            "format": format,
-            "ignore": ignore,
-            "context": context,
-        }
+        kwds: Map = {"validate": validate, "format": format, "ignore": ignore, "context": context}  # fmt: skip
         if self.data is Undefined and "data" not in context:
             # No data specified here or in parent: inject empty data
             # for easier specification of datum encodings.
@@ -4338,26 +4321,26 @@ class RepeatChart(TopLevelMixin, core.TopLevelRepeatSpec):
         self,
         repeat: Optional[list[str] | LayerRepeatMapping | RepeatMapping] = Undefined,
         spec: Optional[ChartType] = Undefined,
-        align: Optional[dict[str, Any] | SchemaBase | LayoutAlign_T] = Undefined,
-        autosize: Optional[dict[str, Any] | SchemaBase | AutosizeType_T] = Undefined,
+        align: Optional[dict | SchemaBase | LayoutAlign_T] = Undefined,
+        autosize: Optional[dict | SchemaBase | AutosizeType_T] = Undefined,
         background: Optional[
-            str | dict[str, Any] | Parameter | SchemaBase | ColorName_T
+            str | dict | Parameter | SchemaBase | ColorName_T
         ] = Undefined,
         bounds: Optional[Literal["full", "flush"]] = Undefined,
-        center: Optional[bool | dict[str, Any] | SchemaBase] = Undefined,
+        center: Optional[bool | dict | SchemaBase] = Undefined,
         columns: Optional[int] = Undefined,
-        config: Optional[dict[str, Any] | SchemaBase] = Undefined,
+        config: Optional[dict | SchemaBase] = Undefined,
         data: Optional[ChartDataType] = Undefined,
-        datasets: Optional[dict[str, Any] | SchemaBase] = Undefined,
+        datasets: Optional[dict | SchemaBase] = Undefined,
         description: Optional[str] = Undefined,
         name: Optional[str] = Undefined,
-        padding: Optional[dict[str, Any] | float | Parameter | SchemaBase] = Undefined,
+        padding: Optional[dict | float | Parameter | SchemaBase] = Undefined,
         params: Optional[Sequence[_Parameter]] = Undefined,
-        resolve: Optional[dict[str, Any] | SchemaBase] = Undefined,
-        spacing: Optional[dict[str, Any] | float | SchemaBase] = Undefined,
-        title: Optional[str | dict[str, Any] | SchemaBase | Sequence[str]] = Undefined,
-        transform: Optional[Sequence[dict[str, Any] | SchemaBase]] = Undefined,
-        usermeta: Optional[dict[str, Any] | SchemaBase] = Undefined,
+        resolve: Optional[dict | SchemaBase] = Undefined,
+        spacing: Optional[dict | float | SchemaBase] = Undefined,
+        title: Optional[str | dict | SchemaBase | Sequence[str]] = Undefined,
+        transform: Optional[Sequence[dict | SchemaBase]] = Undefined,
+        usermeta: Optional[dict | SchemaBase] = Undefined,
         **kwds: Any,
     ) -> None:
         tp_name = type(self).__name__
@@ -4524,7 +4507,7 @@ class ConcatChart(TopLevelMixin, core.TopLevelConcatSpec):
         Evaluate a ConcatChart's transforms.
 
         Evaluate the data transforms associated with a ConcatChart and return the
-        transformed data for each subplot as a list of DataFrames.
+        transformed data for each subplot as a list of DataFrames
 
         Parameters
         ----------
@@ -4625,10 +4608,10 @@ class HConcatChart(TopLevelMixin, core.TopLevelHConcatSpec):
         self, row_limit: int | None = None, exclude: Iterable[str] | None = None
     ) -> list[DataFrameLike]:
         """
-        Evaluate an HConcatChart's transforms.
+        Evaluate a HConcatChart's transforms.
 
-        Evaluate the data transforms associated with an HConcatChart and return the
-        transformed data for each subplot as a list of DataFrames.
+        Evaluate the data transforms associated with a HConcatChart and return the
+        transformed data for each subplot as a list of DataFrames
 
         Parameters
         ----------
@@ -4921,78 +4904,9 @@ class LayerChart(TopLevelMixin, _EncodingMixin, core.TopLevelLayerSpec):
         return self.add_params(*selections)
 
 
-_FACET_CHANNELS = ("row", "column", "facet")
-
-
-def _get_facet_spec(chart: LayerType) -> dict[str, Any]:
-    """Return the facet-related encoding channels from a chart as a plain dict."""
-    encoding = chart._get("encoding")
-    if utils.is_undefined(encoding):
-        return {}
-    d: dict[str, Any] = {}
-    for ch in _FACET_CHANNELS:
-        val = encoding._get(ch)
-        if val is not Undefined:
-            d[ch] = val
-    return d
-
-
-def _hoist_facet_encodings(
-    subcharts: Sequence[LayerType],
-) -> tuple[list[LayerType], dict[str, Any]]:
-    """
-    Extract common facet encodings from layers if all layers share them.
-
-    If all subcharts have identical facet-related encodings (``row``, ``column``,
-    ``facet``), strips those channels from each subchart's encoding and returns
-    the cleaned subcharts together with the common facet encoding dict.  Returns
-    ``(list(subcharts), {})`` when there is nothing to hoist (no facet encodings,
-    or the specs differ across layers).
-    """
-    per_chart = [_get_facet_spec(c) for c in subcharts]
-
-    # Nothing to hoist if no chart has any facet encoding.
-    if all(not d for d in per_chart):
-        return list(subcharts), {}
-
-    # Use to_dict() for robust equality comparison of SchemaBase objects.
-    def _serialize(d: dict[str, Any]) -> dict[str, Any]:
-        return {k: v.to_dict() if hasattr(v, "to_dict") else v for k, v in d.items()}
-
-    first_cmp = _serialize(per_chart[0])
-    if not all(_serialize(d) == first_cmp for d in per_chart[1:]):
-        # Facet specs differ across layers; cannot hoist — fall through to error.
-        return list(subcharts), {}
-
-    # All layers share the same facet spec — strip those channels from each layer.
-    # Use copy(deep=["encoding"]) so the original charts are not mutated and so
-    # that the data identity (needed by _combine_subchart_data) is preserved.
-    cleaned: list[Any] = []
-    for chart in subcharts:
-        chart = chart.copy(deep=["encoding"])
-        encoding = chart._get("encoding")
-        if not utils.is_undefined(encoding):
-            for ch in _FACET_CHANNELS:
-                encoding[ch] = Undefined
-        cleaned.append(chart)
-
-    return cleaned, per_chart[0]
-
-
-def layer(*charts: LayerType, **kwargs: Any) -> LayerChart | FacetChart:
-    """
-    Layer multiple charts.
-
-    When all charts share identical facet encodings (``row``, ``column``, or
-    ``facet`` channels), those encodings are automatically hoisted and the
-    result is a :class:`FacetChart` equivalent to calling
-    ``.facet(row=..., column=...)`` after layering.
-    """
-    cleaned_charts, facet_kwargs = _hoist_facet_encodings(charts)
-    result = LayerChart(layer=cleaned_charts, **kwargs)
-    if facet_kwargs:
-        return result.facet(**facet_kwargs)
-    return result
+def layer(*charts: LayerType, **kwargs: Any) -> LayerChart:
+    """Layer multiple charts."""
+    return LayerChart(layer=charts, **kwargs)
 
 
 class FacetChart(TopLevelMixin, core.TopLevelFacetSpec):
@@ -5003,7 +4917,7 @@ class FacetChart(TopLevelMixin, core.TopLevelFacetSpec):
         self,
         data: Optional[ChartDataType] = Undefined,
         spec: Optional[ChartType] = Undefined,
-        facet: Optional[dict[str, Any] | SchemaBase] = Undefined,
+        facet: Optional[dict | SchemaBase] = Undefined,
         params: Optional[Sequence[_Parameter]] = Undefined,
         **kwargs: Any,
     ) -> None:
@@ -5091,7 +5005,7 @@ def topo_feature(url: str, feature: str, **kwargs: Any) -> UrlData:
     Parameters
     ----------
     url : string
-        A URL from which to load the data set.
+        An URL from which to load the data set.
 
     feature : string
         The name of the TopoJSON object set to convert to a GeoJSON feature collection. For
@@ -5112,25 +5026,8 @@ def _combine_subchart_data(
 ) -> tuple[Optional[ChartDataType], list[ChartType]]:
     def remove_data(subchart: _TSchemaBase) -> _TSchemaBase:
         if subchart.data is not Undefined:
-            # Before removing data, compute and cache a hash
-            # if this subchart will need a name.
-            # This ensures that otherwise identical charts
-            # which use different data get unique hashes.
-            # The cached hash is stored in _kwds
-            # so it survives the copy() operation
-            # and can easily be removed before serialization validation.
-            cached_hash = None
-            if (
-                isinstance(subchart, Chart)
-                and getattr(subchart, "name", None) in (None, Undefined)
-                and hasattr(subchart, "_compute_hash")
-            ):
-                cached_hash = subchart._compute_hash()
-                subchart["_cached_hash"] = cached_hash
-
             subchart = subchart.copy()
             subchart.data = Undefined
-
         return subchart
 
     if not subcharts:
@@ -5151,9 +5048,9 @@ def _combine_subchart_data(
     return data, subcharts
 
 
-_Parameter: TypeAlias = (
-    core.VariableParameter | core.TopLevelSelectionParameter | core.SelectionParameter
-)
+_Parameter: TypeAlias = Union[
+    core.VariableParameter, core.TopLevelSelectionParameter, core.SelectionParameter
+]
 
 
 def _viewless_dict(param: _Parameter) -> dict[str, Any]:
@@ -5218,51 +5115,27 @@ def _remove_duplicate_params(layer: list[ChartType]) -> list[ChartType]:
     return subcharts
 
 
-def _view_base_for_chart(obj: Any) -> str:
-    """Return a base view name for a chart/layer (for building position-based names)."""
-    name = obj.name
-    parts = name.rsplit("_", 1)
-    if len(parts) == 2 and parts[1].isdigit():
-        return parts[0] or name
-    return name
-
-
-def _view_name_for_param(subchart: ChartType, is_concat: bool) -> str:
-    """View name for this subchart to add to a param's views."""
-    if isinstance(subchart, Chart):
-        return subchart.name
-    if is_concat and isinstance(subchart, FacetChart):
-        spec = subchart.spec
-        if isinstance(spec, Chart):
-            return spec.name
-        if isinstance(spec, LayerChart) and spec.layer:
-            return spec.layer[0].name
-    return ""
-
-
 def _combine_subchart_params(  # noqa: C901
     params: Optional[Sequence[_Parameter]], subcharts: list[ChartType]
 ) -> tuple[Optional[Sequence[_Parameter]], list[ChartType]]:
     if utils.is_undefined(params):
         params = []
+
     # List of triples related to params, (param, dictionary minus views, views)
     param_info: list[tuple[_Parameter, dict[str, Any], list[str]]] = []
 
-    # Put parameters already found into `param_info`. Copy each param's views so we can
-    # mutate the list in the MERGE branch and so no two entries share the same list.
+    # Put parameters already found into `param_info` list.
     for param in params:
         p = _prepare_to_lift(param)
-        views = (
-            []
-            if isinstance(p, core.VariableParameter)
-            else list(p.views)
-            if p.views
-            else []
+        param_info.append(
+            (
+                p,
+                _viewless_dict(p),
+                [] if isinstance(p, core.VariableParameter) else p.views,
+            )
         )
-        param_info.append((p, _viewless_dict(p), views))
 
     subcharts = [subchart.copy() for subchart in subcharts]
-    is_concat = len(subcharts) > 1
 
     for i, subchart in enumerate(subcharts):
         if (not hasattr(subchart, "params")) or (utils.is_undefined(subchart.params)):
@@ -5273,16 +5146,6 @@ def _combine_subchart_params(  # noqa: C901
             # Use the hash as a base but append the position to ensure uniqueness
             base_name = subchart._get_view_hash_name()
             subchart.name = f"{base_name}_{i}"
-
-        # In concat, FacetCharts get the same content-hash view name; disambiguate by position.
-        if is_concat and isinstance(subchart, FacetChart):
-            spec = subchart.spec
-            subchart.spec = spec.copy(deep=True)
-            spec = subchart.spec
-            if isinstance(spec, LayerChart) and spec.layer:
-                spec.layer[0].name = f"{_view_base_for_chart(spec.layer[0])}_{i}"
-            elif isinstance(spec, Chart):
-                spec.name = f"{_view_base_for_chart(spec)}_{i}"
 
         for param in subchart.params:
             p = _prepare_to_lift(param)
@@ -5299,17 +5162,14 @@ def _combine_subchart_params(  # noqa: C901
                 continue
 
             # At this stage in the loop, p must be a TopLevelSelectionParameter.
-            # Get this subchart's view name from the subchart only (not p.views: params can share lists).
-            view_to_add = _view_name_for_param(subchart, is_concat)
-            # MERGE: start from param's views; APPEND: start from [] so we don't pull in another param's views.
-            views_after = list(p.views or []) if found else []
-            if view_to_add and view_to_add not in views_after:
-                views_after.append(view_to_add)
+
+            if isinstance(subchart, Chart) and (subchart.name not in p.views):
+                p.views.append(subchart.name)
 
             if found:
-                merge_idx = dlist.index(pd)
-                _, _, old_views = param_info[merge_idx]
-                new_views = [v for v in views_after if v not in old_views]
+                i = dlist.index(pd)
+                _, _, old_views = param_info[i]
+                new_views = [v for v in p.views if v not in old_views]
                 old_views += new_views
 
                 # Warn when parameters get deduplicated
@@ -5321,7 +5181,7 @@ def _combine_subchart_params(  # noqa: C901
                     stacklevel=5,
                 )
             else:
-                param_info.append((p, pd, views_after))
+                param_info.append((p, pd, p.views))
 
         subchart.params = Undefined
 
@@ -5342,14 +5202,13 @@ def _get_repeat_strings(
 ) -> list[str]:
     if isinstance(repeat, list):
         return repeat
-
-    klist = ["row", "column"]  # RepeatMapping
-    if isinstance(repeat, LayerRepeatMapping):
+    elif isinstance(repeat, core.LayerRepeatMapping):
         klist = ["row", "column", "layer"]
+    elif isinstance(repeat, core.RepeatMapping):
+        klist = ["row", "column"]
     rclist = [k for k in klist if repeat[k] is not Undefined]
     rcstrings = [[f"{k}_{v}" for v in repeat[k]] for k in rclist]
-    retstr: list[str] = ["".join(s) for s in itertools.product(*rcstrings)]
-    return retstr
+    return ["".join(s) for s in itertools.product(*rcstrings)]
 
 
 def _extend_view_name(v: str, r: str, spec: Chart | LayerChart) -> str:
@@ -5452,14 +5311,14 @@ def _remove_layer_props(  # noqa: C901
             # or it must be Undefined or identical to proceed.
             output_dict[prop] = chart[prop]
         else:
-            msg = f"There are inconsistent values for {prop}"
+            msg = f"There are inconsistent values {values} for {prop}"  # pyright: ignore[reportPossiblyUnboundVariable]
             raise ValueError(msg)
         subcharts = [remove_prop(c, prop) for c in subcharts]
 
     return output_dict, subcharts
 
 
-@utils.use_signature_func(core.SequenceParams)
+@utils.use_signature(core.SequenceParams)
 def sequence(
     start: Optional[float],
     stop: Optional[float | None] = None,
@@ -5474,7 +5333,7 @@ def sequence(
     return core.SequenceGenerator(sequence=params, **kwds)
 
 
-@utils.use_signature_func(core.GraticuleParams)
+@utils.use_signature(core.GraticuleParams)
 def graticule(**kwds: Any) -> GraticuleGenerator:
     """Graticule generator."""
     # graticule: True indicates default parameters
@@ -5487,30 +5346,24 @@ def sphere() -> SphereGenerator:
     return core.SphereGenerator(sphere=True)
 
 
-ChartType: TypeAlias = (
-    Chart
-    | RepeatChart
-    | ConcatChart
-    | HConcatChart
-    | VConcatChart
-    | FacetChart
-    | LayerChart
-)
-ConcatType: TypeAlias = (
-    ChartType
-    | core.FacetSpec
-    | core.LayerSpec
-    | core.RepeatSpec
-    | core.FacetedUnitSpec
-    | core.LayerRepeatSpec
-    | core.NonNormalizedSpec
-    | core.NonLayerRepeatSpec
-    | core.ConcatSpecGenericSpec
-    | core.ConcatSpecGenericSpec
-    | core.HConcatSpecGenericSpec
-    | core.VConcatSpecGenericSpec
-)
-LayerType: TypeAlias = ChartType | core.UnitSpec | core.LayerSpec
+ChartType: TypeAlias = Union[
+    Chart, RepeatChart, ConcatChart, HConcatChart, VConcatChart, FacetChart, LayerChart
+]
+ConcatType: TypeAlias = Union[
+    ChartType,
+    core.FacetSpec,
+    core.LayerSpec,
+    core.RepeatSpec,
+    core.FacetedUnitSpec,
+    core.LayerRepeatSpec,
+    core.NonNormalizedSpec,
+    core.NonLayerRepeatSpec,
+    core.ConcatSpecGenericSpec,
+    core.ConcatSpecGenericSpec,
+    core.HConcatSpecGenericSpec,
+    core.VConcatSpecGenericSpec,
+]
+LayerType: TypeAlias = Union[ChartType, core.UnitSpec, core.LayerSpec]
 
 
 def is_chart_type(obj: Any) -> TypeIs[ChartType]:

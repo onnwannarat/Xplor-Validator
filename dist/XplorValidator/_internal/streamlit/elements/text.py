@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, cast
 
-from streamlit.elements.lib.layout_utils import create_layout_config
+from streamlit.elements.lib.layout_utils import LayoutConfig, validate_width
 from streamlit.proto.Text_pb2 import Text as TextProto
 from streamlit.runtime.metrics_util import gather_metrics
 from streamlit.string_util import clean_text
@@ -102,11 +102,8 @@ class TextMixin:
         if help:
             text_proto.help = help
 
-        layout_config = create_layout_config(
-            width=width,
-            text_alignment=text_alignment,
-            allow_content_width=True,
-        )
+        validate_width(width, allow_content=True)
+        layout_config = LayoutConfig(width=width, text_alignment=text_alignment)
 
         return self.dg._enqueue("text", text_proto, layout_config=layout_config)
 

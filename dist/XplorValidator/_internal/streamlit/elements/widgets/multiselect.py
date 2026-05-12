@@ -29,8 +29,9 @@ from typing import (
 from streamlit.dataframe_util import OptionSequence, convert_anything_to_list
 from streamlit.elements.lib.form_utils import current_form_id
 from streamlit.elements.lib.layout_utils import (
+    LayoutConfig,
     WidthWithoutContent,
-    create_layout_config,
+    validate_width,
 )
 from streamlit.elements.lib.options_selector_utils import (
     SelectWidgetFilterMode,
@@ -690,7 +691,8 @@ class MultiSelectMixin:
             proto.raw_values[:] = serde.serialize(current_values)
             proto.set_value = True
 
-        layout_config = create_layout_config(width=width)
+        validate_width(width)
+        layout_config = LayoutConfig(width=width)
 
         if ctx:
             save_for_app_testing(ctx, element_id, format_func)

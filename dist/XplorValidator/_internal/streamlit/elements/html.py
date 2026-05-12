@@ -20,7 +20,11 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
 from streamlit.delta_generator_singletons import get_dg_singleton_instance
-from streamlit.elements.lib.layout_utils import create_layout_config
+from streamlit.elements.lib.layout_utils import (
+    LayoutConfig,
+    Width,
+    validate_width,
+)
 from streamlit.errors import StreamlitAPIException
 from streamlit.proto.Html_pb2 import Html as HtmlProto
 from streamlit.runtime.metrics_util import gather_metrics
@@ -29,7 +33,6 @@ from streamlit.type_util import SupportsReprHtml, SupportsStr, has_callable_attr
 
 if TYPE_CHECKING:
     from streamlit.delta_generator import DeltaGenerator
-    from streamlit.elements.lib.layout_utils import Width
 
 
 class HtmlMixin:
@@ -132,7 +135,8 @@ class HtmlMixin:
         if html_content == "":
             raise StreamlitAPIException("`st.html` body cannot be empty")
 
-        layout_config = create_layout_config(width=width, allow_content_width=True)
+        validate_width(width, allow_content=True)
+        layout_config = LayoutConfig(width=width)
 
         # Handle the case where there are only style tags - issue #9388
         # Use event container for style tags so they don't take up space in the app content

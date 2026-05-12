@@ -33,7 +33,7 @@ from typing import (
 
 from streamlit import runtime
 from streamlit.elements.lib.form_utils import current_form_id, is_in_form
-from streamlit.elements.lib.layout_utils import Width, create_layout_config
+from streamlit.elements.lib.layout_utils import LayoutConfig, Width, validate_width
 from streamlit.elements.lib.policies import check_widget_policies
 from streamlit.elements.lib.shortcut_utils import normalize_shortcut
 from streamlit.elements.lib.utils import (
@@ -108,7 +108,7 @@ def _normalize_icon_position(
             f'The argument passed was "{icon_position}".'
         )
 
-    return cast("IconPosition", icon_position)  # type: ignore[redundant-cast]
+    return cast("IconPosition", icon_position)
 
 
 def _icon_position_to_proto(
@@ -1395,7 +1395,8 @@ class ButtonMixin:
             value_type="trigger_value",
         )
 
-        layout_config = create_layout_config(width=width, allow_content_width=True)
+        validate_width(width, allow_content=True)
+        layout_config = LayoutConfig(width=width)
         self.dg._enqueue(
             "download_button", download_button_proto, layout_config=layout_config
         )
@@ -1492,7 +1493,8 @@ class ButtonMixin:
                 value_type="trigger_value",
             )
 
-        layout_config = create_layout_config(width=width, allow_content_width=True)
+        validate_width(width, allow_content=True)
+        layout_config = LayoutConfig(width=width)
         link_button_dg = self.dg._enqueue(
             "link_button", link_button_proto, layout_config=layout_config
         )
@@ -1517,13 +1519,14 @@ class ButtonMixin:
         if query_params:
             page_link_proto.query_string = process_query_params(query_params)
 
-        layout_config = create_layout_config(width=width, allow_content_width=True)
+        validate_width(width, allow_content=True)
 
         # Set icon_position early so it's set even in early return paths
         page_link_proto.icon_position = _icon_position_to_proto(icon_position)
 
         ctx = get_script_run_ctx()
         if not ctx:
+            layout_config = LayoutConfig(width=width)
             return self.dg._enqueue(
                 "page_link", page_link_proto, layout_config=layout_config
             )
@@ -1550,6 +1553,7 @@ class ButtonMixin:
             if page.is_external:
                 page_link_proto.page = page.external_url or ""
                 page_link_proto.external = True
+                layout_config = LayoutConfig(width=width)
                 return self.dg._enqueue(
                     "page_link", page_link_proto, layout_config=layout_config
                 )
@@ -1567,6 +1571,7 @@ class ButtonMixin:
                     raise StreamlitMissingPageLabelError()
                 page_link_proto.page = page
                 page_link_proto.external = True
+                layout_config = LayoutConfig(width=width)
                 return self.dg._enqueue(
                     "page_link", page_link_proto, layout_config=layout_config
                 )
@@ -1600,6 +1605,7 @@ class ButtonMixin:
                     uses_pages_directory=bool(PagesManager.uses_pages_directory),
                 )
 
+        layout_config = LayoutConfig(width=width)
         return self.dg._enqueue(
             "page_link", page_link_proto, layout_config=layout_config
         )
@@ -1704,7 +1710,8 @@ class ButtonMixin:
         if ctx:
             save_for_app_testing(ctx, element_id, button_state.value)
 
-        layout_config = create_layout_config(width=width, allow_content_width=True)
+        validate_width(width, allow_content=True)
+        layout_config = LayoutConfig(width=width)
         self.dg._enqueue("button", button_proto, layout_config=layout_config)
 
         return button_state.value

@@ -21,8 +21,10 @@ from typing import TYPE_CHECKING, Literal, cast, overload
 from streamlit.elements.lib.form_utils import current_form_id
 from streamlit.elements.lib.layout_utils import (
     Height,
+    LayoutConfig,
     WidthWithoutContent,
-    create_layout_config,
+    validate_height,
+    validate_width,
 )
 from streamlit.elements.lib.policies import (
     check_widget_policies,
@@ -463,7 +465,8 @@ class TextWidgetsMixin:
                 text_input_proto.value = widget_state.value
             text_input_proto.set_value = True
 
-        layout_config = create_layout_config(width=width)
+        validate_width(width)
+        layout_config = LayoutConfig(width=width)
 
         self.dg._enqueue("text_input", text_input_proto, layout_config=layout_config)
         return widget_state.value
@@ -802,16 +805,17 @@ class TextWidgetsMixin:
                 text_area_proto.value = widget_state.value
             text_area_proto.set_value = True
 
-        if height is None:
+        validate_width(width)
+        if height is not None:
+            validate_height(height, allow_content=True)
+        else:
             # We want to maintain the same approximately three lines of text height
             # for the text input when the label is collapsed.
             # These numbers are for the entire element including the label and
             # padding.
             height = 122 if label_visibility != "collapsed" else 94
 
-        layout_config = create_layout_config(
-            width=width, height=height, allow_content_height=True
-        )
+        layout_config = LayoutConfig(width=width, height=height)
 
         self.dg._enqueue("text_area", text_area_proto, layout_config=layout_config)
         return widget_state.value

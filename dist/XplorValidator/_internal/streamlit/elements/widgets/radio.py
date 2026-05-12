@@ -22,8 +22,9 @@ from typing_extensions import Never
 from streamlit.dataframe_util import OptionSequence, convert_anything_to_list
 from streamlit.elements.lib.form_utils import current_form_id
 from streamlit.elements.lib.layout_utils import (
+    LayoutConfig,
     Width,
-    create_layout_config,
+    validate_width,
 )
 from streamlit.elements.lib.options_selector_utils import (
     create_mappings,
@@ -446,7 +447,8 @@ class RadioMixin:
         )
         maybe_raise_label_warnings(label, label_visibility)
 
-        layout_config = create_layout_config(width=width, allow_content_width=True)
+        validate_width(width, allow_content=True)
+        layout_config = LayoutConfig(width=width)
 
         opt = convert_anything_to_list(options)
         check_python_comparable(opt)
@@ -549,7 +551,7 @@ class RadioMixin:
         # Cast to T | None since radio doesn't support accept_new_options,
         # so string values that aren't in options will be reset to default.
         current_value, value_needs_reset = validate_and_sync_value_with_options(
-            cast("T | None", widget_state.value), opt, index, key, format_func
+            cast("T | None", widget_state.value), opt, index, key
         )
 
         if value_needs_reset or widget_state.value_changed:

@@ -75,7 +75,7 @@ class PollingPathWatcher:
         self._modification_time = util.path_modification_time(
             str(self._path), self._allow_nonexistent
         )
-        self._content_hash = util.calc_hash_with_blocking_retries(
+        self._md5 = util.calc_md5_with_blocking_retries(
             str(self._path),
             glob_pattern=self._glob_pattern,
             allow_nonexistent=self._allow_nonexistent,
@@ -110,23 +110,23 @@ class PollingPathWatcher:
 
             self._modification_time = modification_time
 
-            new_hash = util.calc_hash_with_blocking_retries(
+            md5 = util.calc_md5_with_blocking_retries(
                 str(self._path),
                 glob_pattern=self._glob_pattern,
                 allow_nonexistent=self._allow_nonexistent,
             )
-            if new_hash == self._content_hash:
+            if md5 == self._md5:
                 self._schedule()
                 return
         except StreamlitMaxRetriesError as ex:
             _LOGGER.debug(
-                "Ignoring file change. Failed to calculate hash for path %s",
+                "Ignoring file change. Failed to calculate MD5 for path %s",
                 self._path,
                 exc_info=ex,
             )
             return
 
-        self._content_hash = new_hash
+        self._md5 = md5
 
         _LOGGER.debug("Change detected: %s", self._path)
         self._on_changed(str(self._path))

@@ -79,24 +79,30 @@ with st.sidebar:
 
 <div class="how-to-step">
   <div class="step-num">2</div>
+  <div class="step-text"><strong>Upload QikKids Service IDs CSV</strong><br>
+  The service ID export from QikKids (e.g. <em>4258_QikKidsOnboardingServiceIds_…csv</em>). Used to map service names to Xplor IDs.</div>
+</div>
+
+<div class="how-to-step">
+  <div class="step-num">3</div>
   <div class="step-text"><strong>Upload payment plan CSV</strong><br>
   Upload the payment plan CSV exported from QikKids.</div>
 </div>
 
 <div class="how-to-step">
-  <div class="step-num">3</div>
+  <div class="step-num">4</div>
   <div class="step-text"><strong>(Optional) Adjust column mapping</strong><br>
   If your CSV uses different column names, expand the Column Mapping section and update them.</div>
 </div>
 
 <div class="how-to-step">
-  <div class="step-num">4</div>
+  <div class="step-num">5</div>
   <div class="step-text"><strong>Select output folder</strong><br>
   Click Browse to choose where to save the cleaned CSV, error report, and split files.</div>
 </div>
 
 <div class="how-to-step">
-  <div class="step-num">5</div>
+  <div class="step-num">6</div>
   <div class="step-text"><strong>Run and review</strong><br>
   Click <em>Run Checker</em> and fix any errors shown before importing.</div>
 </div>
@@ -126,6 +132,20 @@ st.markdown("""
 # ─────────────────────────────────────────────────────────────────────────────
 # FILE UPLOADER
 # ─────────────────────────────────────────────────────────────────────────────
+
+qk_svc_file = st.file_uploader(
+    "**QikKids Service IDs CSV** (required)",
+    type=["csv"],
+    help="The service ID export from QikKids (e.g. 4258_QikKidsOnboardingServiceIds_…csv). Used to map service names to Xplor IDs.",
+    key="qk_svc_ids_upload",
+)
+if qk_svc_file is not None:
+    st.session_state["qk_svc_ids_bytes"] = qk_svc_file.read()
+    st.session_state["qk_svc_ids_name"] = qk_svc_file.name
+
+qk_svc_ids_bytes: bytes | None = st.session_state.get("qk_svc_ids_bytes")
+if qk_svc_ids_bytes and "qk_svc_ids_name" in st.session_state:
+    st.caption(f"✅ Using: **{st.session_state['qk_svc_ids_name']}**")
 
 plan_file = st.file_uploader(
     "**Payment Plan CSV** (required)",
@@ -192,7 +212,7 @@ output_folder = st.session_state.get("plans_output_folder", "").strip()
 # RUN BUTTON
 # ─────────────────────────────────────────────────────────────────────────────
 
-all_ready = bool(plan_file) and bool(output_folder)
+all_ready = bool(plan_file) and bool(output_folder) and bool(qk_svc_ids_bytes)
 run_btn = st.button(
     "▶ Run Checker",
     type="primary",
@@ -201,7 +221,9 @@ run_btn = st.button(
 )
 
 if not run_btn:
-    if not plan_file:
+    if not qk_svc_ids_bytes:
+        st.info("Upload the QikKids Service IDs CSV to continue.")
+    elif not plan_file:
         st.info("Upload a payment plan CSV to continue.")
     elif not output_folder:
         st.info("Select an output folder to continue.")
@@ -223,6 +245,7 @@ with st.spinner("Validating payment plans — please wait…"):
             service_ids_bytes=svc_map_bytes,
             output_dir=output_folder,
             col_mapping=col_mapping or None,
+            qk_service_ids_bytes=qk_svc_ids_bytes,
         )
     except Exception as exc:
         st.error(f"Error processing payment plans: {exc}")
@@ -302,19 +325,14 @@ st.dataframe(styled_summary, use_container_width=True, hide_index=True)
 # ─────────────────────────────────────────────────────────────────────────────
 
 st.markdown("### Output Files")
-st.write(f"📄 Cleaned CSV: `{result_dict['cleaned_path']}`")
 st.write(f"📊 Error Report: `{result_dict['error_path']}`")
 
 split = result_dict.get("split_result", {})
 known = split.get("known", {})
-unknown = split.get("unknown", {})
 
 if known:
     with st.expander(f"Split files by service ({len(known)} service(s))"):
         for svc_name, path in sorted(known.items()):
             st.write(f"✅ **{svc_name}** — `{path}`")
-
-if unknown:
-    with st.expander(f"⚠️ Unmapped Service IDs ({len(unknown)} group(s))", expanded=True):
-        for sid, path in sorted(unknown.items()):
-            st.write(f"⚠️ Service ID `{sid}` — `{path}`")
+else:
+    st.warning("No services could be matched. Check that service names in the payment plan CSV match the QikKids Service IDs CSV.")

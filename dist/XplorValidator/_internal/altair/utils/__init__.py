@@ -8,7 +8,6 @@ from .core import (
     sanitize_pandas_dataframe,
     update_nested,
     use_signature,
-    use_signature_func,
 )
 from .deprecation import AltairDeprecationWarning, deprecated, deprecated_warn
 from .html import spec_to_html
@@ -43,5 +42,4 @@ __all__ = (
     "spec_to_html",
     "update_nested",
     "use_signature",
-    "use_signature_func",
 )

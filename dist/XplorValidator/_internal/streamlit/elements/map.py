@@ -34,8 +34,10 @@ from streamlit.elements.lib.color_util import (
 )
 from streamlit.elements.lib.layout_utils import (
     HeightWithoutContent,
+    LayoutConfig,
     WidthWithoutContent,
-    create_layout_config,
+    validate_height,
+    validate_width,
 )
 from streamlit.errors import StreamlitAPIException
 from streamlit.proto.DeckGlJsonChart_pb2 import DeckGlJsonChart as DeckGlJsonChartProto
@@ -271,13 +273,15 @@ class MapMixin:
                 width = "stretch"
             # For use_container_width=False, preserve any integer width that was set.
 
-        layout_config = create_layout_config(width=width, height=height)
+        validate_width(width, allow_content=False)
+        validate_height(height, allow_content=False)
 
         map_proto = DeckGlJsonChartProto()
         deck_gl_json = to_deckgl_json(data, latitude, longitude, size, color, zoom)
 
         marshall(map_proto, deck_gl_json)
 
+        layout_config = LayoutConfig(width=width, height=height)
         return self.dg._enqueue(
             "deck_gl_json_chart", map_proto, layout_config=layout_config
         )

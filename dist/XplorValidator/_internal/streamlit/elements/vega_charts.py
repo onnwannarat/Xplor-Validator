@@ -24,6 +24,7 @@ from dataclasses import dataclass
 from typing import (
     TYPE_CHECKING,
     Any,
+    Final,
     Literal,
     TypeAlias,
     TypedDict,
@@ -39,6 +40,7 @@ from streamlit.deprecation_util import (
     make_deprecated_name_warning,
     show_deprecation_warning,
 )
+from streamlit.elements.lib import dicttools
 from streamlit.elements.lib.built_in_chart_utils import (
     AddRowsMetadata,
     ChartStackType,
@@ -63,7 +65,7 @@ from streamlit.proto.VegaLiteChart_pb2 import (
 from streamlit.runtime.metrics_util import gather_metrics
 from streamlit.runtime.scriptrunner_utils.script_run_context import get_script_run_ctx
 from streamlit.runtime.state import WidgetCallback, register_widget
-from streamlit.util import AttributeDictionary, calc_hash
+from streamlit.util import AttributeDictionary, calc_md5
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Sequence
@@ -73,6 +75,36 @@ if TYPE_CHECKING:
     from streamlit.dataframe_util import Data
     from streamlit.delta_generator import DeltaGenerator
     from streamlit.elements.lib.color_util import Color
+
+# See https://vega.github.io/vega-lite/docs/encoding.html
+_CHANNELS: Final = {
+    "x",
+    "y",
+    "x2",
+    "y2",
+    "xError",
+    "xError2",
+    "yError",
+    "yError2",
+    "longitude",
+    "latitude",
+    "color",
+    "opacity",
+    "fillOpacity",
+    "strokeOpacity",
+    "strokeWidth",
+    "size",
+    "shape",
+    "text",
+    "tooltip",
+    "href",
+    "key",
+    "order",
+    "detail",
+    "facet",
+    "row",
+    "column",
+}
 
 VegaLiteSpec: TypeAlias = dict[str, Any]
 AltairChart: TypeAlias = Union[
@@ -288,9 +320,17 @@ def _has_nested_composition(spec: VegaLiteSpec) -> bool:
 def _prepare_vega_lite_spec(
     spec: VegaLiteSpec,
     use_container_width: bool,
+    **kwargs: Any,
 ) -> VegaLiteSpec:
-    # Clone the spec dict, since we may be mutating it.
-    spec = dict(spec)
+    if kwargs:
+        # Support passing in kwargs.
+        # > marshall(proto, {foo: 'bar'}, baz='boz')
+        # Merge spec with unflattened kwargs, where kwargs take precedence.
+        # This only works for string keys, but kwarg keys are strings anyways.
+        spec = dict(spec, **dicttools.unflatten(kwargs, _CHANNELS))
+    else:
+        # Clone the spec dict, since we may be mutating it.
+        spec = dict(spec)
 
     if len(spec) == 0:
         raise StreamlitAPIException("Vega-Lite charts require a non-empty spec dict.")
@@ -1990,6 +2030,7 @@ class VegaChartsMixin:
         key: Key | None = None,
         on_select: Literal["ignore"] = "ignore",
         selection_mode: str | Iterable[str] | None = None,
+        **kwargs: Any,
     ) -> DeltaGenerator: ...
 
     # When on_select=rerun, return VegaLiteState.
@@ -2006,6 +2047,7 @@ class VegaChartsMixin:
         key: Key | None = None,
         on_select: Literal["rerun"] | WidgetCallback,
         selection_mode: str | Iterable[str] | None = None,
+        **kwargs: Any,
     ) -> VegaLiteState: ...
 
     @gather_metrics("vega_lite_chart")
@@ -2021,6 +2063,7 @@ class VegaChartsMixin:
         key: Key | None = None,
         on_select: Literal["rerun", "ignore"] | WidgetCallback = "ignore",
         selection_mode: str | Iterable[str] | None = None,
+        **kwargs: Any,
     ) -> DeltaGenerator | VegaLiteState:
         """Display a chart using the Vega-Lite library.
 
@@ -2166,6 +2209,15 @@ class VegaChartsMixin:
 
             Selection parameters are identified by their ``name`` property.
 
+        **kwargs : any
+            The Vega-Lite spec for the chart as keywords. This is an alternative
+            to ``spec``.
+
+            .. deprecated::
+               ``**kwargs`` are deprecated and will be removed in a future
+               release. To specify Vega-Lite configuration options, use the
+               ``spec`` argument instead.
+
         Returns
         -------
         element or dict
@@ -2206,6 +2258,14 @@ class VegaChartsMixin:
         translated to the syntax shown above.
 
         """
+        if kwargs:
+            show_deprecation_warning(
+                "Variable keyword arguments for `st.vega_lite_chart` have been "
+                "deprecated and will be removed in a future release. Use the "
+                "`spec` argument instead to specify Vega-Lite configuration "
+                "options."
+            )
+
         return self._vega_lite_chart(
             data=data,
             spec=spec,
@@ -2216,6 +2276,7 @@ class VegaChartsMixin:
             selection_mode=selection_mode,
             width=width,
             height=height,
+            **kwargs,
         )
 
     def _altair_chart(
@@ -2269,6 +2330,7 @@ class VegaChartsMixin:
         add_rows_metadata: AddRowsMetadata | None = None,
         width: Width | None = None,
         height: Height = "content",
+        **kwargs: Any,
     ) -> DeltaGenerator | VegaLiteState:
         """Internal method to enqueue a vega-lite chart element based on a vega-lite spec.
 
@@ -2370,7 +2432,7 @@ class VegaChartsMixin:
             else width == "stretch"
         )
 
-        spec = _prepare_vega_lite_spec(spec, use_container_width_for_spec)
+        spec = _prepare_vega_lite_spec(spec, use_container_width_for_spec, **kwargs)
         _marshall_chart_data(vega_lite_proto, spec, data)
 
         # Prevent the spec from changing across reruns:
@@ -2456,8 +2518,8 @@ def _to_arrow_dataset(data: Any, datasets: dict[str, Any]) -> dict[str, str]:
     # Already serialize the data to be able to create a stable
     # dataset name:
     data_bytes = dataframe_util.convert_anything_to_arrow_bytes(data)
-    # Use the content hash of the data as the name:
-    name = calc_hash(str(data_bytes))
+    # Use the md5 hash of the data as the name:
+    name = calc_md5(str(data_bytes))
 
     datasets[name] = data_bytes
     return {"name": name}

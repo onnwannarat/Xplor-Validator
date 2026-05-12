@@ -24,7 +24,7 @@ from streamlit.deprecation_util import (
     show_deprecation_warning,
 )
 from streamlit.elements.lib.image_utils import marshall_images
-from streamlit.elements.lib.layout_utils import create_layout_config
+from streamlit.elements.lib.layout_utils import LayoutConfig, Width, validate_width
 from streamlit.proto.Image_pb2 import ImageList as ImageListProto
 from streamlit.runtime.metrics_util import gather_metrics
 
@@ -32,7 +32,6 @@ if TYPE_CHECKING:
     from matplotlib.figure import Figure
 
     from streamlit.delta_generator import DeltaGenerator
-    from streamlit.elements.lib.layout_utils import LayoutConfig, Width
 
 
 class PyplotMixin:
@@ -168,7 +167,8 @@ If you have a specific use case that requires this functionality, please let us
 know via [issue on Github](https://github.com/streamlit/streamlit/issues).
 """)
 
-        layout_config = create_layout_config(width=width, allow_content_width=True)
+        validate_width(width, allow_content=True)
+        layout_config = LayoutConfig(width=width)
 
         image_list_proto = ImageListProto()
         marshall(

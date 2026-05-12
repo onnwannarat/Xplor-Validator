@@ -63,7 +63,6 @@ class AlertMixin:
         *,  # keyword-only args:
         icon: str | None = None,
         width: WidthWithoutContent = "stretch",
-        title: SupportsStr | None = None,
     ) -> DeltaGenerator:
         """Display error message.
 
@@ -119,20 +118,6 @@ class AlertMixin:
               the parent container, the width of the element matches the width
               of the parent container.
 
-        title : str or None
-            An optional title to display above the body text. If ``None``
-            (default), no title is displayed. The title is rendered with bold
-            styling and can optionally contain GitHub-flavored Markdown of the
-            following types: Italics, Strikethroughs, Inline Code, Links, and
-            Images. Images display like icons, with a max height equal to the
-            font height.
-
-            Unsupported Markdown elements are unwrapped so only their children
-            (text contents) render. Display elements are not supported.
-
-            See the ``body`` parameter of |st.markdown|_ for additional,
-            supported Markdown directives.
-
         Examples
         --------
         >>> import streamlit as st
@@ -146,8 +131,6 @@ class AlertMixin:
         alert_proto.icon = processed_icon
         alert_proto.body = processed_body
         alert_proto.format = AlertProto.ERROR
-        if title is not None:
-            alert_proto.title = clean_text(title)
 
         validate_width(width)
 
@@ -169,7 +152,6 @@ class AlertMixin:
         *,  # keyword-only args:
         icon: str | None = None,
         width: WidthWithoutContent = "stretch",
-        title: SupportsStr | None = None,
     ) -> DeltaGenerator:
         """Display warning message.
 
@@ -225,20 +207,6 @@ class AlertMixin:
               the parent container, the width of the element matches the width
               of the parent container.
 
-        title : str or None
-            An optional title to display above the body text. If ``None``
-            (default), no title is displayed. The title is rendered with bold
-            styling and can optionally contain GitHub-flavored Markdown of the
-            following types: Italics, Strikethroughs, Inline Code, Links, and
-            Images. Images display like icons, with a max height equal to the
-            font height.
-
-            Unsupported Markdown elements are unwrapped so only their children
-            (text contents) render. Display elements are not supported.
-
-            See the ``body`` parameter of |st.markdown|_ for additional,
-            supported Markdown directives.
-
         Examples
         --------
         >>> import streamlit as st
@@ -251,8 +219,6 @@ class AlertMixin:
         alert_proto.body = processed_body
         alert_proto.icon = processed_icon
         alert_proto.format = AlertProto.WARNING
-        if title is not None:
-            alert_proto.title = clean_text(title)
 
         validate_width(width)
 
@@ -274,7 +240,6 @@ class AlertMixin:
         *,  # keyword-only args:
         icon: str | None = None,
         width: WidthWithoutContent = "stretch",
-        title: SupportsStr | None = None,
     ) -> DeltaGenerator:
         """Display an informational message.
 
@@ -330,20 +295,6 @@ class AlertMixin:
               the parent container, the width of the element matches the width
               of the parent container.
 
-        title : str or None
-            An optional title to display above the body text. If ``None``
-            (default), no title is displayed. The title is rendered with bold
-            styling and can optionally contain GitHub-flavored Markdown of the
-            following types: Italics, Strikethroughs, Inline Code, Links, and
-            Images. Images display like icons, with a max height equal to the
-            font height.
-
-            Unsupported Markdown elements are unwrapped so only their children
-            (text contents) render. Display elements are not supported.
-
-            See the ``body`` parameter of |st.markdown|_ for additional,
-            supported Markdown directives.
-
         Examples
         --------
         >>> import streamlit as st
@@ -357,8 +308,6 @@ class AlertMixin:
         alert_proto.body = processed_body
         alert_proto.icon = processed_icon
         alert_proto.format = AlertProto.INFO
-        if title is not None:
-            alert_proto.title = clean_text(title)
 
         validate_width(width)
 
@@ -380,7 +329,6 @@ class AlertMixin:
         *,  # keyword-only args:
         icon: str | None = None,
         width: WidthWithoutContent = "stretch",
-        title: SupportsStr | None = None,
     ) -> DeltaGenerator:
         """Display a success message.
 
@@ -436,20 +384,6 @@ class AlertMixin:
               the parent container, the width of the element matches the width
               of the parent container.
 
-        title : str or None
-            An optional title to display above the body text. If ``None``
-            (default), no title is displayed. The title is rendered with bold
-            styling and can optionally contain GitHub-flavored Markdown of the
-            following types: Italics, Strikethroughs, Inline Code, Links, and
-            Images. Images display like icons, with a max height equal to the
-            font height.
-
-            Unsupported Markdown elements are unwrapped so only their children
-            (text contents) render. Display elements are not supported.
-
-            See the ``body`` parameter of |st.markdown|_ for additional,
-            supported Markdown directives.
-
         Examples
         --------
         >>> import streamlit as st
@@ -462,8 +396,6 @@ class AlertMixin:
         alert_proto.body = processed_body
         alert_proto.icon = processed_icon
         alert_proto.format = AlertProto.SUCCESS
-        if title is not None:
-            alert_proto.title = clean_text(title)
 
         validate_width(width)
 

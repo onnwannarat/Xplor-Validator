@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Xplor Data Migration Tools — User Guide (Windows)</title>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: 14px; color: #172B4D; max-width: 900px; margin: 40px auto; padding: 0 24px; line-height: 1.6; }
+  h1 { font-size: 28px; font-weight: 700; color: #172B4D; border-bottom: 2px solid #DFE1E6; padding-bottom: 12px; margin-top: 32px; }
+  h2 { font-size: 20px; font-weight: 700; color: #172B4D; margin-top: 36px; border-bottom: 1px solid #DFE1E6; padding-bottom: 8px; }
+  h3 { font-size: 16px; font-weight: 700; color: #172B4D; margin-top: 24px; }
+  table { border-collapse: collapse; width: 100%; margin: 12px 0; }
+  th { background-color: #F4F5F7; color: #172B4D; font-weight: 700; text-align: left; padding: 8px 12px; border: 1px solid #DFE1E6; }
+  td { padding: 8px 12px; border: 1px solid #DFE1E6; vertical-align: top; }
+  tr:nth-child(even) td { background-color: #FAFBFC; }
+  code { background-color: #F4F5F7; border-radius: 3px; padding: 1px 5px; font-family: "SFMono-Regular", Consolas, monospace; font-size: 13px; color: #0052CC; }
+  ol, ul { margin: 8px 0; padding-left: 24px; }
+  li { margin: 4px 0; }
+  .info { background-color: #DEEBFF; border-left: 4px solid #0052CC; border-radius: 3px; padding: 12px 16px; margin: 12px 0; }
+  .tip { background-color: #E3FCEF; border-left: 4px solid #00875A; border-radius: 3px; padding: 12px 16px; margin: 12px 0; }
+  .note { background-color: #FFFAE6; border-left: 4px solid #FF8B00; border-radius: 3px; padding: 12px 16px; margin: 12px 0; }
+  .warning { background-color: #FFEBE6; border-left: 4px solid #DE350B; border-radius: 3px; padding: 12px 16px; margin: 12px 0; }
+  .panel-title { font-weight: 700; margin-bottom: 4px; font-size: 13px; text-transform: uppercase; letter-spacing: 0.05em; }
+  .screenshot { background-color: #F4F5F7; border: 1px dashed #B3BAC5; border-radius: 3px; padding: 10px 14px; margin: 12px 0; color: #5E6C84; font-style: italic; font-size: 13px; }
+  hr { border: none; border-top: 2px solid #DFE1E6; margin: 32px 0; }
+  .badge-error { background-color: #FFEBE6; color: #DE350B; font-weight: 700; padding: 2px 8px; border-radius: 3px; }
+  .badge-warning { background-color: #FFFAE6; color: #974F0C; font-weight: 700; padding: 2px 8px; border-radius: 3px; }
+  .badge-fixed { background-color: #E3FCEF; color: #006644; font-weight: 700; padding: 2px 8px; border-radius: 3px; }
+  .print-note { background: #fff3cd; border: 1px solid #ffc107; border-radius: 4px; padding: 12px 16px; margin-bottom: 24px; font-size: 13px; }
+  .code-block { background-color: #F4F5F7; border: 1px solid #DFE1E6; border-radius: 3px; padding: 10px 14px; margin: 10px 0; font-family: "SFMono-Regular", Consolas, monospace; font-size: 13px; color: #172B4D; }
+</style>
+</head>
+<body>
+
+<div class="print-note">
+  <strong>How to paste into Confluence:</strong> Open this file in your browser → Select All (<strong>Ctrl+A</strong>) → Copy (<strong>Ctrl+C</strong>) → Paste into Confluence editor (<strong>Ctrl+V</strong>). Delete this yellow box before saving.
+</div>
+
+<h1>Xplor Data Migration Tools — User Guide (Windows)</h1>
+
+<div class="info">
+  <div class="panel-title">Version 3.0.0</div>
+  This guide covers the unified app that replaces all previous standalone tools. You no longer need to download or manage multiple scripts. Everything is available in one application.
+</div>
+
+<hr>
+
+<h2>Overview</h2>
+
+<p><strong>Xplor Data Migration Tools</strong> is a desktop application for validating, cleaning, and preparing QikKids data for import into Xplor. It runs entirely in your browser — no coding or terminal knowledge required.</p>
+
+<p>The app includes 5 tools:</p>
+
+<table>
+  <tr><th>Tool</th><th>What it does</th></tr>
+  <tr><td><strong>Xplor Validator</strong></td><td>Validates migration files, auto-fixes common issues, and generates audit reports</td></tr>
+  <tr><td><strong>Room &amp; Fee Names</strong></td><td>Checks QikKids booking fee and room names against Xplor definitions</td></tr>
+  <tr><td><strong>Bookings Import</strong></td><td>Processes and cleans recurring and casual booking exports, splits by service</td></tr>
+  <tr><td><strong>Payment Plans</strong></td><td>Validates payment plan CSVs, fixes date/weekday formats, splits by service</td></tr>
+  <tr><td><strong>Balance Adjustments</strong></td><td>Maps balance adjustment data to Xplor services and produces per-centre import files</td></tr>
+</table>
+
+<p>All tools share a single <strong>serviceIDs.csv</strong> file that you upload once when the app starts.</p>
+
+<hr>
+
+<h2>Getting Started (Windows)</h2>
+
+<h3>What you need</h3>
+<ul>
+  <li><strong>XplorValidator folder</strong> — download and extract from the shared Google Drive / SharePoint folder</li>
+  <li><strong>serviceIDs.csv</strong> — the service mapping file for your migration</li>
+</ul>
+
+<hr>
+
+<h3>Step 1 — Download and extract the app</h3>
+
+<p>Download the <code>XplorValidator.zip</code> file from the shared Google Drive / SharePoint folder.</p>
+
+<ol>
+  <li>Right-click the downloaded <code>XplorValidator.zip</code> file</li>
+  <li>Select <strong>Extract All...</strong></li>
+  <li>Choose a destination folder (e.g. your Desktop or Documents)</li>
+  <li>Click <strong>Extract</strong></li>
+</ol>
+
+<div class="warning">
+  <div class="panel-title">Do not run the app directly from the zip file</div>
+  Always extract the folder first. Running <code>XplorValidator.exe</code> from inside an unextracted zip will cause the app to fail.
+</div>
+
+<hr>
+
+<h3>Step 2 — First launch (bypass Windows SmartScreen)</h3>
+
+<p>Because the app is not from the Microsoft Store, Windows SmartScreen may display a security warning on first launch.</p>
+
+<p><strong>To open it for the first time:</strong></p>
+<ol>
+  <li>Open the extracted <code>XplorValidator</code> folder</li>
+  <li>Double-click <code>XplorValidator.exe</code></li>
+  <li>If a blue SmartScreen dialog appears saying <em>"Windows protected your PC"</em>:</li>
+</ol>
+
+<ol style="list-style-type: lower-alpha; padding-left: 48px;">
+  <li>Click <strong>More info</strong></li>
+  <li>Click <strong>Run anyway</strong></li>
+</ol>
+
+<div class="tip">
+  You only need to do this once. After the first launch, the app will open normally.
+</div>
+
+<div class="screenshot">📷 Screenshot: Windows SmartScreen dialog with "More info" and "Run anyway" highlighted</div>
+
+<div class="note">
+  <div class="panel-title">If "Run anyway" does not appear</div>
+  <p>Your organisation's security policy may block unsigned apps. Try unblocking the file manually:</p>
+  <ol>
+    <li>Right-click <code>XplorValidator.exe</code> → select <strong>Properties</strong></li>
+    <li>At the bottom of the General tab, check the box next to <strong>Unblock</strong></li>
+    <li>Click <strong>OK</strong>, then double-click the app to launch</li>
+  </ol>
+  <div class="screenshot">📷 Screenshot: File Properties dialog with Unblock checkbox at the bottom</div>
+  <p>If the issue persists, contact your IT team to whitelist the application.</p>
+</div>
+
+<hr>
+
+<h3>Step 3 — Wait for the app to launch</h3>
+
+<p>After launching, a <strong>black console window</strong> will appear — this is normal. It shows startup messages and must stay open while you use the app.</p>
+
+<p>The app starts a local web server. This takes <strong>5–15 seconds</strong>. Your default browser will then open automatically and navigate to the app.</p>
+
+<div class="screenshot">📷 Screenshot: Console window with startup messages alongside the browser showing the home page</div>
+
+<div class="warning">
+  <div class="panel-title">Do not close the console window</div>
+  Closing the black console window will stop the app and close the browser session. To stop the app, close the console window only when you are finished.
+</div>
+
+<div class="note">
+  If the browser doesn't open automatically, type <code>http://localhost:8501</code> into your browser's address bar.
+</div>
+
+<hr>
+
+<h3>Step 4 — Upload serviceIDs.csv</h3>
+
+<p>Before using any tool, upload your <strong>serviceIDs.csv</strong> file using the uploader in the <strong>left sidebar</strong>.</p>
+<ol>
+  <li>Click <strong>Browse files</strong> in the sidebar</li>
+  <li>Select your <code>serviceIDs.csv</code> file</li>
+  <li>Wait for the green confirmation message</li>
+</ol>
+
+<div class="screenshot">📷 Screenshot: Sidebar with serviceIDs.csv uploader and green confirmation</div>
+
+<div class="warning">
+  <div class="panel-title">Important</div>
+  <code>serviceIDs.csv</code> must be re-uploaded every time you reopen the app. It persists across all 5 tools within the same session, so you only need to upload it <strong>once per session</strong>.
+</div>
+
+<p><strong>Required columns in serviceIDs.csv:</strong></p>
+<table>
+  <tr><th>Column</th><th>Description</th></tr>
+  <tr><td><code>Service Name</code></td><td>Xplor service name</td></tr>
+  <tr><td><code>Service Type</code></td><td>e.g. Long Day Care, OSHC</td></tr>
+  <tr><td><code>QKDBID</code></td><td>QikKids database ID</td></tr>
+  <tr><td><code>QKServiceID</code></td><td>QikKids legacy service ID</td></tr>
+  <tr><td><code>Xplor Service ID</code></td><td>Xplor service ID</td></tr>
+</table>
+
+<hr>
+
+<h2>Tool 1 — Xplor Validator</h2>
+
+<p>Validates migration export files against Xplor import rules, auto-fixes common issues, and generates audit reports including cross-service duplicate parent detection.</p>
+<p>Navigate to <strong>Xplor Validator</strong> from the sidebar or home page.</p>
+
+<h3>Inputs</h3>
+<table>
+  <tr><th>Input</th><th>Description</th></tr>
+  <tr><td>Migration file</td><td>CSV or XLSX export from QikKids containing parent, child, and emergency contact records</td></tr>
+  <tr><td>Output folder</td><td>Folder where all output files will be saved (a subfolder called <code>output/</code> is created inside)</td></tr>
+  <tr><td>Import scope</td><td><strong>Active only</strong> — validate active enrolments only; <strong>Active + WaitList</strong> — include waitlisted children</td></tr>
+  <tr><td>Existing service files <em>(optional)</em></td><td>Previously validated service files for cross-service duplicate parent detection</td></tr>
+</table>
+
+<h3>Steps</h3>
+<ol>
+  <li>Select your <strong>import scope</strong> (Active only / Active + WaitList)</li>
+  <li>Click <strong>Browse files</strong> and upload your migration file (CSV or XLSX)</li>
+  <li>Select your <strong>output folder</strong> using the folder picker</li>
+  <li><em>(Optional)</em> Upload existing service files for cross-service duplicate detection</li>
+  <li>Click <strong>Run Validation</strong></li>
+  <li>Review the results summary and the filterable results table</li>
+  <li>Collect your output files from the output folder</li>
+</ol>
+
+<div class="screenshot">📷 Screenshot: Validator upload area and scope selector</div>
+
+<h3>What the validator checks and fixes</h3>
+
+<p><strong>Auto-fixed automatically:</strong></p>
+<ul>
+  <li>State abbreviations normalised (e.g. "New South Wales" → "NSW")</li>
+  <li>Dates converted to standard format</li>
+  <li>Blank first name filled from last name</li>
+  <li><strong>Parent 2 email cleared</strong> if it duplicates Parent 1 email — Parent 1 takes priority</li>
+  <li><strong>Emergency contact emails deduplicated within the EC block</strong> — if a later emergency contact's email matches an earlier one, the later email is cleared (EC1 takes priority over EC2–EC5)</li>
+  <li><strong>Emergency contact email cleared</strong> if it matches Parent 1 or Parent 2 email — a parent who is also listed as an emergency contact will have the duplicate EC email removed</li>
+  <li><strong>Child CRN cleared</strong> when it is identical to Parent 1 CRN or Parent 2 CRN — a child and parent cannot share the same CRN</li>
+</ul>
+
+<p><strong>Validated and flagged:</strong></p>
+<ul>
+  <li>Mandatory fields: Service ID, Legacy ID, First/Last Name, DOB, Status, CRN, Room, Enrolment Date</li>
+  <li>CRN format (9 digits + 1 letter)</li>
+  <li>Email, phone, postcode, and boolean field formats</li>
+  <li>Cross-service duplicate parents (matched by name + DOB / contact / email)</li>
+</ul>
+
+<h3>Severity levels</h3>
+<table>
+  <tr><th>Severity</th><th>Meaning</th></tr>
+  <tr><td><span class="badge-error">ERROR</span></td><td>Must be fixed before importing into Xplor</td></tr>
+  <tr><td><span class="badge-warning">WARNING</span></td><td>Review recommended — may not block import</td></tr>
+  <tr><td><span class="badge-fixed">FIXED</span></td><td>Issue detected and automatically corrected</td></tr>
+</table>
+
+<div class="screenshot">📷 Screenshot: Results table with ERROR / WARNING / FIXED rows</div>
+
+<h3>Outputs</h3>
+<p>All files are saved to the <code>output\</code> subfolder inside your chosen output folder.</p>
+<table>
+  <tr><th>File</th><th>Description</th></tr>
+  <tr><td><code>[Xplor Service ID].csv</code></td><td>One CSV per service, ready to import into Xplor</td></tr>
+  <tr><td><code>validation_audit_report_[timestamp].xlsx</code></td><td>Full audit report with all errors, warnings, and fixes</td></tr>
+  <tr><td><code>client_audit_report_[timestamp].xlsx</code></td><td>This report shows all cleared duplicate emails. Use this for your client reference if required</td></tr>
+  <tr><td><code>duplicate_parents_report_[timestamp].xlsx</code></td><td>Within-upload and cross-service duplicate flags</td></tr>
+</table>
+
+<div class="screenshot">📷 Screenshot: Audit report Excel file with colour-coded rows</div>
+
+<hr>
+
+<h2>Tool 2 — Room &amp; Fee Names</h2>
+
+<p>Identifies QikKids booking fee and room names that don't exist in Xplor, and suggests possible matches using fuzzy matching.</p>
+<p>Navigate to <strong>Room &amp; Fee Names</strong> from the sidebar or home page.</p>
+
+<h3>Inputs</h3>
+<table>
+  <tr><th>Input</th><th>Description</th></tr>
+  <tr><td>Xplor Active Fees CSV</td><td>Export from Xplor with columns: <code>Service ID</code>, <code>Fee Name</code></td></tr>
+  <tr><td>Xplor Active Rooms CSV</td><td>Export from Xplor with columns: <code>Centre_Name</code>, <code>Room_Name</code></td></tr>
+  <tr><td>QikKids booking files</td><td>One or more booking exports (CSV or XLSX) — recurring and/or casual</td></tr>
+  <tr><td>Save folder <em>(optional)</em></td><td>Folder to save the report; if not selected, use the Download button</td></tr>
+</table>
+
+<h3>Steps</h3>
+<ol>
+  <li>Upload <strong>Xplor Active Fees CSV</strong></li>
+  <li>Upload <strong>Xplor Active Rooms CSV</strong></li>
+  <li>Upload one or more <strong>QikKids booking files</strong></li>
+  <li><em>(Optional)</em> Select a save folder</li>
+  <li>Click <strong>Check Names</strong></li>
+  <li>Review the mismatch summary</li>
+  <li>Download or save the report</li>
+</ol>
+
+<div class="screenshot">📷 Screenshot: Upload area for all three file types</div>
+
+<h3>Outputs</h3>
+<table>
+  <tr><th>File</th><th>Description</th></tr>
+  <tr><td><code>Fee_Room_Name_Mismatch_Report.xlsx</code></td><td>Two-sheet Excel report: <strong>Fee Mismatches</strong> and <strong>Room Mismatches</strong></td></tr>
+</table>
+<p>Each sheet shows: QK Service ID, Xplor Service ID, Service Name, the mismatched name, and suggested possible matches.</p>
+
+<div class="tip">
+  A <strong>green status banner</strong> means no mismatches were found. An <strong>orange banner</strong> means mismatches were detected and need to be resolved in Xplor before importing bookings.
+</div>
+
+<div class="screenshot">📷 Screenshot: Mismatch report Excel with Fee Mismatches sheet</div>
+
+<hr>
+
+<h2>Tool 3 — Bookings Import</h2>
+
+<p>Processes QikKids booking exports into clean, de-duplicated, service-split CSV files ready for import into Xplor.</p>
+<p>Navigate to <strong>Bookings Import</strong> from the sidebar or home page.</p>
+
+<h3>Inputs</h3>
+<table>
+  <tr><th>Input</th><th>Description</th></tr>
+  <tr><td>QikKids booking files</td><td>One or more exports (CSV or XLSX) — recurring and casual files can be uploaded together</td></tr>
+  <tr><td>Output folder</td><td>Folder where split output files will be saved</td></tr>
+</table>
+
+<h3>Steps</h3>
+<ol>
+  <li>Upload one or more <strong>QikKids booking files</strong></li>
+  <li>Select your <strong>output folder</strong></li>
+  <li>Click <strong>Process Bookings</strong></li>
+  <li>Review the results summary and any conflict warnings</li>
+  <li>Collect your output files from the output folder</li>
+</ol>
+
+<div class="screenshot">📷 Screenshot: Upload area and results summary showing recurring/casual breakdown</div>
+
+<h3>What the tool does</h3>
+<ul>
+  <li>Detects and removes <strong>exact duplicate booking rows</strong></li>
+  <li>Detects <strong>recurring schedule overlaps</strong> (same child, overlapping date range, shared booking day)</li>
+  <li>Removes <strong>casual bookings that fall within existing recurring patterns</strong></li>
+  <li>Maps QikKids service IDs to Xplor service IDs</li>
+  <li>Reformats dates to DD/MM/YYYY and sets default end dates to 31/12/2026</li>
+  <li>Splits output by service and booking type (recurring vs casual)</li>
+</ul>
+
+<h3>Outputs</h3>
+<table>
+  <tr><th>Location</th><th>Description</th></tr>
+  <tr><td><code>Recurring\[Service_ID]_Recurring.csv</code></td><td>One file per service — recurring bookings</td></tr>
+  <tr><td><code>Casual\[Service_ID]_Casual.csv</code></td><td>One file per service — casual bookings</td></tr>
+  <tr><td><code>Duplicate_Bookings_Report.xlsx</code></td><td>All exact duplicate rows that were removed</td></tr>
+  <tr><td><code>Removed_Casual_Overlaps_Report.xlsx</code></td><td>Casual bookings removed due to recurring conflicts</td></tr>
+</table>
+
+<div class="warning">
+  <div class="panel-title">Import order</div>
+  Always import <strong>Recurring</strong> files into Xplor first, then <strong>Casual</strong> files.
+</div>
+
+<div class="screenshot">📷 Screenshot: Output file list with Recurring and Casual sections</div>
+
+<hr>
+
+<h2>Tool 4 — Payment Plans</h2>
+
+<p>Validates payment plan CSVs against Xplor Onboarding Tool rules, auto-fixes date and weekday formats, and splits the output by service.</p>
+<p>Navigate to <strong>Payment Plans</strong> from the sidebar or home page.</p>
+
+<h3>Inputs</h3>
+<table>
+  <tr><th>Input</th><th>Description</th></tr>
+  <tr><td>QikKids Service IDs CSV</td><td>Service ID export from QikKids (e.g. <code>4258_QikKidsOnboardingServiceIds_…csv</code>). Contains the <code>ServiceId</code> and <code>Name</code> columns used to map service names to QK Service IDs.</td></tr>
+  <tr><td>Payment plan CSV</td><td>Exported from QikKids</td></tr>
+  <tr><td>Output folder</td><td>Folder where the split import files and error report will be saved</td></tr>
+  <tr><td>Column mapping <em>(optional)</em></td><td>Auto-detected; expand the Column Mapping section if your file uses custom column names</td></tr>
+</table>
+
+<div class="info">
+  <div class="panel-title">How service mapping works</div>
+  The payment plan CSV contains QikKids service names but no service IDs. The tool matches each service name against the <strong>QikKids Service IDs CSV</strong> to find the QK Service ID, then looks that ID up in the <strong>serviceIDs.csv</strong> (uploaded in the sidebar) to get the Xplor Service ID and the correct Xplor service name used in the output files.
+</div>
+
+<h3>Steps</h3>
+<ol>
+  <li>Upload the <strong>QikKids Service IDs CSV</strong> (the service ID export from QikKids for this project)</li>
+  <li>Upload your <strong>payment plan CSV</strong></li>
+  <li>Select your <strong>output folder</strong></li>
+  <li><em>(Optional)</em> Expand <strong>Column Mapping</strong> and adjust if your file uses non-standard column names</li>
+  <li>Click <strong>Run Checker</strong></li>
+  <li>Review the error summary table</li>
+  <li>Collect your output files from the output folder</li>
+</ol>
+
+<div class="screenshot">📷 Screenshot: Upload area and column mapping section</div>
+
+<h3>Auto-fixes applied</h3>
+<table>
+  <tr><th>Fix</th><th>What it does</th></tr>
+  <tr><td>Date format</td><td>Converts dates to DD/MM/YYYY</td></tr>
+  <tr><td>Weekday abbreviation</td><td>Converts full names to 3-letter codes (e.g. "Monday" → "Mon")</td></tr>
+  <tr><td>Whitespace</td><td>Strips trailing spaces from all fields</td></tr>
+</table>
+
+<h3>Error codes</h3>
+<table>
+  <tr><th>Error Code</th><th>Meaning</th></tr>
+  <tr><td><code>ERROR_INVALID_PAYMENT_DAY</code></td><td>Payment day is Saturday or Sunday</td></tr>
+  <tr><td><code>ERROR_MISSING_BOOKING_START_DATE</code></td><td>Start Date is empty</td></tr>
+  <tr><td><code>ERROR_MISSING_PAYMENT_DAY</code></td><td>Weekday is empty</td></tr>
+  <tr><td><code>ERROR_MISSING_GUARDIAN</code></td><td>Parent first or last name is missing</td></tr>
+  <tr><td><code>ERROR_INVALID_FREQUENCY</code></td><td>Cycle is not Weekly, Fortnightly, or Monthly</td></tr>
+  <tr><td><code>ERROR_NEGATIVE_DIRECT_DEBIT_LIMIT</code></td><td>Direct debit limit is a negative number</td></tr>
+  <tr><td><code>ERROR_NEGATIVE_FIXED_LIMIT</code></td><td>Fixed amount is a negative number</td></tr>
+  <tr><td><code>ERROR_ONLY_ONE_AMOUNT_ALLOWED</code></td><td>Both direct debit limit and fixed amount are set</td></tr>
+  <tr><td><code>MANUAL_PLAN_NOT_MONDAY</code></td><td>A manual (paused) plan does not start on Monday</td></tr>
+</table>
+
+<div class="screenshot">📷 Screenshot: Error report Excel with colour-coded error rows</div>
+
+<h3>Outputs</h3>
+<table>
+  <tr><th>File</th><th>Description</th></tr>
+  <tr><td><code>[Xplor Service Name]_payment_plan_import.csv</code></td><td>One CSV per matched service, named using the Xplor service name from serviceIDs.csv. Ready to import into the Onboarding Tool.</td></tr>
+  <tr><td><code>[input filename]_error_report.xlsx</code></td><td>Colour-coded Excel error report listing all validation errors by row</td></tr>
+</table>
+
+<div class="note">
+  <div class="panel-title">Services not in serviceIDs.csv are skipped</div>
+  If a service name in the payment plan CSV cannot be matched to a QK Service ID in the QikKids Service IDs CSV, or if that QK Service ID is not present in serviceIDs.csv, those rows are skipped and no import file is created for that service. Verify the service name spelling matches exactly.
+</div>
+
+<hr>
+
+<h2>Tool 5 — Balance Adjustments</h2>
+
+<p>Processes balance adjustment exports, maps them to Xplor services by centre name, and produces one per-centre import file using the Xplor Balance Adjustments template.</p>
+<p>Navigate to <strong>Balance Adjustments</strong> from the sidebar or home page.</p>
+
+<h3>Inputs</h3>
+<table>
+  <tr><th>Input</th><th>Description</th></tr>
+  <tr><td>Balance adjustment files</td><td>One or more files in CSV, XLSX, or HTML-exported XLS format</td></tr>
+  <tr><td>Output folder</td><td>Folder where per-centre import files will be saved</td></tr>
+  <tr><td>Template file <em>(optional)</em></td><td>Custom template XLSX; if not provided, the built-in template is used</td></tr>
+</table>
+
+<h3>Steps</h3>
+<ol>
+  <li>Upload one or more <strong>balance adjustment files</strong></li>
+  <li>Select your <strong>output folder</strong></li>
+  <li><em>(Optional)</em> Upload a custom template file</li>
+  <li>Click <strong>Process Balance Adjustments</strong></li>
+  <li>Review the results — created files and any skipped centres</li>
+  <li>Collect your output files from the output folder</li>
+</ol>
+
+<div class="screenshot">📷 Screenshot: Upload area and results summary with created files list</div>
+
+<h3>What the tool does</h3>
+<ul>
+  <li>Accepts CSV, XLSX, and HTML-disguised XLS files</li>
+  <li>Parses Account Name in "Last Name, First Name" format</li>
+  <li>Handles both <code>Credit</code>/<code>Owing</code> column pairs and single signed <code>Amount Due</code> columns</li>
+  <li>Removes rows where Account Name contains "demo parent"</li>
+  <li>Matches centre names to <strong>Service Name</strong> values in serviceIDs.csv (exact match, case-sensitive)</li>
+  <li>Applies template styling and layout to each output file</li>
+</ul>
+
+<h3>Outputs</h3>
+<table>
+  <tr><th>File</th><th>Description</th></tr>
+  <tr><td><code>[Centre Name]_Balance_Import.xlsx</code></td><td>One file per matched centre, formatted using the template</td></tr>
+</table>
+
+<div class="note">
+  <div class="panel-title">Skipped centres</div>
+  A skipped centre means the centre name in your input file does not exactly match a Service Name in your <code>serviceIDs.csv</code>. Check spelling and capitalisation if a centre is unexpectedly skipped.
+</div>
+
+<div class="screenshot">📷 Screenshot: Skipped centres list and output files by centre</div>
+
+<hr>
+
+<h2>Tips &amp; Troubleshooting</h2>
+
+<h3>General</h3>
+<table>
+  <tr><th>Issue</th><th>Solution</th></tr>
+  <tr><td>App takes a long time to open</td><td>Normal — allow 5–15 seconds on first launch for the server to start</td></tr>
+  <tr><td>Browser doesn't open automatically</td><td>Navigate to <code>http://localhost:8501</code> manually</td></tr>
+  <tr><td>SmartScreen blocks the app</td><td>Click <strong>More info</strong> → <strong>Run anyway</strong> (see Getting Started, Step 2)</td></tr>
+  <tr><td>"Run anyway" option is missing</td><td>Right-click <code>XplorValidator.exe</code> → Properties → check <strong>Unblock</strong> → OK</td></tr>
+  <tr><td>serviceIDs.csv not recognised</td><td>Re-upload it in the sidebar — it resets each time the app is restarted</td></tr>
+  <tr><td>App stops working mid-session</td><td>Check that the black console window is still open — closing it stops the app</td></tr>
+</table>
+
+<h3>serviceIDs.csv</h3>
+<ul>
+  <li>Must be re-uploaded <strong>every time you reopen the app</strong></li>
+  <li>Once uploaded, it persists across all 5 tools for the rest of that session</li>
+  <li>If a tool reports unmapped or skipped services, check that the centre/service names in your input file match the values in <code>serviceIDs.csv</code> exactly (including spacing and capitalisation)</li>
+</ul>
+
+<h3>Output files</h3>
+<ul>
+  <li>Output files are never written over your original input files</li>
+  <li>If you run the same tool twice, new timestamped files are created alongside existing ones</li>
+  <li>Check the results summary on-screen before collecting files — it lists every file created and its row count</li>
+</ul>
+
+</body>
+</html>

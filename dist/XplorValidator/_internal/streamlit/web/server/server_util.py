@@ -17,13 +17,17 @@
 from __future__ import annotations
 
 import os
-from typing import TYPE_CHECKING, Final, cast
+from typing import TYPE_CHECKING, Final, Literal, cast
+from urllib.parse import urljoin
 
 from streamlit import config, net_util, url_util
 from streamlit.runtime.secrets import secrets_singleton
+from streamlit.type_util import is_version_less_than
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+
+    from tornado.web import RequestHandler
 
 # The port used for internal development.
 DEVELOPMENT_PORT: Final = 3000
@@ -38,21 +42,27 @@ def allowlisted_origins() -> set[str]:
     return {origin.strip() for origin in config.get_option("server.corsAllowedOrigins")}
 
 
-def allow_all_cross_origin_requests() -> bool:
-    """True if cross-origin requests from any origin are allowed.
+def is_tornado_version_less_than(v: str) -> bool:
+    """Return True if the current Tornado version is less than the input version.
 
-    We allow ALL cross-origin requests when CORS protection has been disabled
-    with server.enableCORS=False or when in dev mode (where the Vite dev server
-    and backend use different ports, counting as two origins).
+    Parameters
+    ----------
+    v : str
+        Version string, e.g. "0.25.0"
+
+    Returns
+    -------
+    bool
+
+
+    Raises
+    ------
+    InvalidVersion
+        If the version strings are not valid.
     """
-    return not config.get_option("server.enableCORS") or config.get_option(
-        "global.developmentMode"
-    )
+    import tornado
 
-
-def is_allowed_origin(origin: str) -> bool:
-    """Check if origin is in the allowlisted origins."""
-    return origin in allowlisted_origins()
+    return is_version_less_than(tornado.version, v)
 
 
 def is_url_from_allowed_origins(url: str) -> bool:
@@ -153,6 +163,21 @@ def get_display_address(address: str) -> str:
     return address
 
 
+def make_url_path_regex(
+    *path: str,
+    trailing_slash: Literal["optional", "required", "prohibited"] = "optional",
+) -> str:
+    """Get a regex of the form ^/foo/bar/baz/?$ for a path (foo, bar, baz)."""
+    filtered_paths = [x.strip("/") for x in path if x]  # Filter out falsely components.
+    path_format = r"^/%s$"
+    if trailing_slash == "optional":
+        path_format = r"^/%s/?$"
+    elif trailing_slash == "required":
+        path_format = r"^/%s/$"
+
+    return path_format % "/".join(filtered_paths)
+
+
 def get_url(host_ip: str) -> str:
     """Get the URL for any app served at the given host_ip.
 
@@ -202,3 +227,10 @@ def _get_browser_address_bar_port() -> int:
 
         return DEVELOPMENT_PORT
     return int(config.get_option("browser.serverPort"))
+
+
+def emit_endpoint_deprecation_notice(handler: RequestHandler, new_path: str) -> None:
+    """Emits the warning about deprecation of HTTP endpoint in the HTTP header."""
+    handler.set_header("Deprecation", True)
+    new_url = urljoin(f"{handler.request.protocol}://{handler.request.host}", new_path)
+    handler.set_header("Link", f'<{new_url}>; rel="alternate"')

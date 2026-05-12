@@ -180,8 +180,6 @@ def process_csv(filepath: str, col: dict) -> dict:
         service = g("service")
         parent_id = g("parent_id")
         child_id = g("child_id")
-        service_id = g("service_id")
-
         ctx = dict(row=i, parent_id=parent_id, child_id=child_id,
                    parent_name=parent_name, service=service)
 
@@ -229,9 +227,7 @@ def process_csv(filepath: str, col: dict) -> dict:
                 "last_name": parent_ln or "(empty)",
             })
 
-        # ── 5. Service ID required ────────────────────────────────────────
-        if not service_id:
-            errors["missing_service_id"].append(ctx)
+        # ── 5. Service ID (optional — mapping falls back to Service Name) ───
 
         # ── 6. Billing Cycle validation ───────────────────────────────────
         cycle = g("cycle")
@@ -317,9 +313,15 @@ def write_cleaned_csv(filepath: str, fieldnames: list, rows: list, out_dir: str 
     return str(out)
 
 
-def load_service_mapping(csv_path: str) -> dict:
-    """Load serviceIDs.csv → {qk_service_id_str: {"xplor_id": str, "name": str}}."""
-    mapping = {}
+def load_service_mapping(csv_path: str) -> tuple[dict, dict]:
+    """Load serviceIDs.csv.
+
+    Returns (service_map, service_name_map) where:
+      service_map      = {QKServiceID: {"xplor_id", "name"}}
+      service_name_map = {normalised_service_name: {"xplor_id", "name"}}
+    """
+    service_map = {}
+    service_name_map = {}
     with open(csv_path, "r", encoding="utf-8-sig") as f:
         reader = csv.DictReader(f)
         for row in reader:
@@ -327,8 +329,10 @@ def load_service_mapping(csv_path: str) -> dict:
             xplor_id = row.get("Xplor Service ID", "").strip()
             name = row.get("Service Name", "").strip()
             if qk_id:
-                mapping[qk_id] = {"xplor_id": xplor_id, "name": name}
-    return mapping
+                entry = {"xplor_id": xplor_id, "name": name}
+                service_map[qk_id] = entry
+                service_name_map[name.lower()] = entry
+    return service_map, service_name_map
 
 
 def _safe_filename(name: str) -> str:
@@ -338,43 +342,51 @@ def _safe_filename(name: str) -> str:
     return name.strip()
 
 
-def write_split_csvs(filepath: str, col: dict, rows: list, service_map: dict, out_dir: str | None = None) -> dict:
+def write_split_csvs(
+    filepath: str,
+    col: dict,
+    rows: list,
+    service_map: dict,
+    service_name_map: dict | None = None,
+    out_dir: str | None = None,
+) -> dict:
     """
-    Split processed rows by Service ID and write one CSV per service.
+    Split processed rows by service and write one CSV per service.
 
-    - Rows whose Service ID is found in service_map  → Output/<ServiceName>_payment_plan_import.csv
-    - Rows whose Service ID is NOT found             → Output/unknown/<id>_payment_plan_import.csv
-    - Service Name column is replaced with the correct name from service_map.
-    - All output files follow TEMPLATE_COLUMNS column order.
+    Lookup order per row group:
+      1. QKServiceID (service_map) — used when the input has a Service ID column
+      2. Service Name (service_name_map) — fallback when Service ID is absent
 
-    Returns {"known": {service_name: path}, "unknown": {service_id: path}}
+    Rows whose service cannot be resolved are skipped entirely.
+    Output files are named after the Xplor service name from serviceIDs.csv.
+
+    Returns {"known": {xplor_service_name: path}, "row_map": {orig_row: file_row}}
     """
-    out_dir = _resolve_out_dir(filepath, out_dir)
-    unknown_dir = out_dir / "unknown"
+    out_path: Path = _resolve_out_dir(filepath, out_dir)
 
-    # Group rows by service_id value
+    # Group by QKServiceID when present, otherwise by Service Name.
+    # This ensures each distinct service gets its own group even when there
+    # is no Service ID column in the input.
     groups: dict[str, list] = {}
     for row in rows:
         sid = _entry(row, col, "service_id")
-        groups.setdefault(sid, []).append(row)
+        key = sid if sid else _entry(row, col, "service")
+        groups.setdefault(key, []).append(row)
 
     known_files: dict[str, str] = {}
-    unknown_files: dict[str, str] = {}
     row_map: dict[int, int] = {}   # {original_row_num: service_file_row_num}
 
-    for sid, group_rows in groups.items():
-        svc = service_map.get(sid)
-        is_known = svc is not None
-        if is_known:
-            service_name = svc["name"]
-            xplor_id = svc["xplor_id"]
-            dest = out_dir / (_safe_filename(service_name) + "_payment_plan_import.csv")
-        else:
-            unknown_dir.mkdir(exist_ok=True)
-            label = sid if sid else "no_service_id"
-            dest = unknown_dir / (_safe_filename(label) + "_payment_plan_import.csv")
-            service_name = _entry(group_rows[0], col, "service")   # keep original
-            xplor_id = sid
+    for key, group_rows in groups.items():
+        # Resolve to Xplor service info
+        svc = service_map.get(key)
+        if svc is None and service_name_map:
+            svc = service_name_map.get(key.lower())
+        if svc is None:
+            continue   # not in serviceIDs.csv — skip
+
+        xplor_id = svc["xplor_id"]
+        service_name = svc["name"]
+        dest = out_path / (_safe_filename(service_name) + "_payment_plan_import.csv")
 
         template_rows = []
         for file_row_num, row in enumerate(group_rows, start=2):  # row 1 = header
@@ -406,12 +418,9 @@ def write_split_csvs(filepath: str, col: dict, rows: list, service_map: dict, ou
             writer.writeheader()
             writer.writerows(template_rows)
 
-        if is_known:
-            known_files[service_name] = str(dest)
-        else:
-            unknown_files[sid or "(empty)"] = str(dest)
+        known_files[service_name] = str(dest)
 
-    return {"known": known_files, "unknown": unknown_files, "row_map": row_map}
+    return {"known": known_files, "row_map": row_map}
 
 
 def _translate_error_rows(errors: dict, row_map: dict) -> None:
@@ -770,6 +779,7 @@ def run_payment_plan_checker(
     service_ids_bytes: bytes,
     output_dir: str,
     col_mapping: dict | None = None,
+    qk_service_ids_bytes: bytes | None = None,
 ) -> dict:
     """Validate and process a payment plan CSV from in-memory bytes.
 
@@ -780,11 +790,15 @@ def run_payment_plan_checker(
     filename:
         Original filename (used for output file naming).
     service_ids_bytes:
-        Raw bytes of serviceIDs.csv.
+        Raw bytes of serviceIDs.csv (QKServiceID → Xplor Service ID mapping).
     output_dir:
         Absolute path where all output files will be saved.
     col_mapping:
         Column name mapping dict.  Defaults to DEFAULT_COLUMNS if None.
+    qk_service_ids_bytes:
+        Raw bytes of the QikKids Service IDs CSV export
+        (columns: Dbid, ServiceId, Name, …).  Used to map input Service Name
+        → QKServiceID, which is then resolved to an Xplor ID via service_ids_bytes.
 
     Returns
     -------
@@ -811,28 +825,38 @@ def run_payment_plan_checker(
     # Use a temp path for naming purposes only (out_dir override handles location)
     naming_path = str(Path(output_dir) / filename)
 
-    cleaned_path = write_cleaned_csv(naming_path, result["fieldnames"], result["processed_rows"], out_dir=output_dir)
+    import csv as _csv
 
-    # Load service mapping from bytes
+    # Step 1 — serviceIDs.csv: {QKServiceID → {xplor_id, name (Xplor name)}}
     service_map: dict = {}
     if service_ids_bytes:
         text = service_ids_bytes.decode("utf-8-sig", errors="replace")
-        import csv as _csv
-        reader = _csv.DictReader(io.StringIO(text))
-        for row in reader:
+        for row in _csv.DictReader(io.StringIO(text)):
             qk_id = row.get("QKServiceID", "").strip()
             xplor_id = row.get("Xplor Service ID", "").strip()
             name = row.get("Service Name", "").strip()
             if qk_id:
                 service_map[qk_id] = {"xplor_id": xplor_id, "name": name}
 
-    split_result = write_split_csvs(naming_path, col, result["processed_rows"], service_map, out_dir=output_dir)
+    # Step 2 — QikKids Service IDs CSV: {QK service name (lower) → QKServiceID}
+    # Then join with service_map to build {qk_name_lower → {xplor_id, name}}
+    service_name_map: dict = {}
+    if qk_service_ids_bytes:
+        text = qk_service_ids_bytes.decode("utf-8-sig", errors="replace")
+        for row in _csv.DictReader(io.StringIO(text)):
+            qk_name = row.get("Name", "").strip()
+            qk_id = row.get("ServiceId", "").strip()
+            if qk_name and qk_id:
+                svc = service_map.get(qk_id)
+                if svc:
+                    service_name_map[qk_name.lower()] = svc
+
+    split_result = write_split_csvs(naming_path, col, result["processed_rows"], service_map, service_name_map, out_dir=output_dir)
     _translate_error_rows(result["errors"], split_result["row_map"])
     error_path = write_error_report(naming_path, result["errors"], out_dir=output_dir)
 
     return {
         "result": result,
-        "cleaned_path": cleaned_path,
         "error_path": error_path,
         "split_result": split_result,
         "col": col,

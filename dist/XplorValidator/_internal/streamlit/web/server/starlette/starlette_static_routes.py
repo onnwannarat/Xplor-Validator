@@ -21,13 +21,13 @@ not related to the app static file serving feature.
 from __future__ import annotations
 
 import os
-import re
 from typing import TYPE_CHECKING, Any, Final
 
 from streamlit import file_util
 from streamlit.path_security import is_unsafe_path_pattern
 from streamlit.url_util import make_url_path
-from streamlit.web.server.starlette.starlette_server_config import (
+from streamlit.web.server.routes import (
+    NO_CACHE_PATTERN,
     STATIC_ASSET_CACHE_MAX_AGE_SECONDS,
 )
 
@@ -37,9 +37,6 @@ if TYPE_CHECKING:
     from starlette.routing import BaseRoute
     from starlette.staticfiles import StaticFiles
     from starlette.types import Receive, Scope, Send
-
-# Pattern for files that should not be cached (HTML and manifest.json)
-_NO_CACHE_PATTERN: Final = re.compile(r"(?:\.html$|^manifest\.json$)")
 
 # Reserved paths that should return 404 instead of index.html fallback.
 _RESERVED_STATIC_PATH_SUFFIXES: Final = ("_stcore/health", "_stcore/host-config")
@@ -139,23 +136,23 @@ def create_streamlit_static_handler(
 
         def _is_reserved(self, request_path: str) -> bool:
             """Check if the request path is reserved and should not fallback."""
-            # Use simple endswith check on the URL path.
+            # Match Tornado's behavior: simple endswith check on the URL path.
             # TODO: Consider making this path-segment-aware in the future to avoid
             # false positives like "/my_stcore/health" matching "_stcore/health".
             url_path = request_path.split("?", 1)[0]
             return any(url_path.endswith(x) for x in _RESERVED_STATIC_PATH_SUFFIXES)
 
         def _apply_cache_headers(self, response: Response, served_path: str) -> None:
-            """Apply cache headers for static files."""
+            """Apply cache headers matching Tornado's behavior."""
             if response.status_code in {301, 302, 303, 304, 307, 308}:
                 return
 
             normalized = served_path.replace("\\", "/").lstrip("./")
-            # Mark HTML/manifest assets as no-cache but let hashed bundles
+            # Tornado marks HTML/manifest assets as no-cache but lets hashed bundles
             # live in cache. Keep that contract to avoid churning snapshots or CDNs.
             cache_value = (
                 "no-cache"
-                if not normalized or _NO_CACHE_PATTERN.search(normalized)
+                if not normalized or NO_CACHE_PATTERN.search(normalized)
                 else f"public, immutable, max-age={STATIC_ASSET_CACHE_MAX_AGE_SECONDS}"
             )
             response.headers["Cache-Control"] = cache_value
@@ -167,12 +164,8 @@ def create_streamlit_static_assets_routes(base_url: str | None) -> list[BaseRout
     """Create the static assets mount for serving Streamlit's core assets."""
     from starlette.routing import Mount
 
-    static_dir = file_util.get_static_dir()
-    if not os.path.isdir(static_dir):
-        return []
-
     static_assets = create_streamlit_static_handler(
-        directory=static_dir, base_url=base_url
+        directory=file_util.get_static_dir(), base_url=base_url
     )
     # Strip trailing slash from the path because Starlette's Mount with a trailing
     # slash (e.g., "/myapp/") won't match requests without it (e.g., "/myapp").
