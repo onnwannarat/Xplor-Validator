@@ -406,6 +406,24 @@ if st.session_state.get("last_run_key") != run_key:
         output_dir = Path(dest_folder) / "output"
         try:
             os.makedirs(str(output_dir), exist_ok=True)
+        except PermissionError:
+            import sys
+            if sys.platform == "darwin":
+                st.error(
+                    f"Cannot create output folder in:\n\n`{dest_folder}`\n\n"
+                    "macOS is blocking access to this folder.\n\n"
+                    "**Fix:** Go to **System Settings → Privacy & Security → Files and Folders** "
+                    "(or **Full Disk Access**) and allow this app to access the folder, "
+                    "then try again.\n\n"
+                    "Alternatively, choose a folder on the Desktop."
+                )
+            else:
+                st.error(
+                    f"Cannot create output folder in:\n\n`{dest_folder}`\n\n"
+                    "**Permission denied.** You may not have write access to this folder.\n\n"
+                    "Try choosing a different destination, such as the Desktop."
+                )
+            st.stop()
         except FileNotFoundError:
             st.error(
                 f"Cannot create output folder in:\n\n`{dest_folder}`\n\n"

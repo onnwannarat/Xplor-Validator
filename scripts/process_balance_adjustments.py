@@ -24,6 +24,7 @@ import sys
 import copy
 import csv
 import re
+from collections import Counter
 
 import pandas as pd
 from openpyxl import load_workbook
@@ -214,24 +215,145 @@ def write_output(centre_name, rows_df, template_bytes, output_dir):
     return out_path
 
 
+def write_consolidated_output(all_groups, template_bytes, output_dir):
+    """Create one consolidated .xlsx file containing rows from all centres."""
+    import io as _io
+
+    wb = load_workbook(_io.BytesIO(template_bytes))
+    ws = wb.active
+    if ws is None:
+        raise ValueError("Template workbook has no active sheet.")
+
+    style_ref: dict[int, object] = {
+        col_idx: copy.copy(ws.cell(row=5, column=col_idx)._style)
+        for col_idx in range(1, ws.max_column + 1)
+    }
+
+    excel_row = 5
+    for centre_name, rows_df in all_groups:
+        has_credit_col = "Credit" in rows_df.columns
+        has_owing_col  = "Owing"  in rows_df.columns
+        has_amount_due = "Amount Due" in rows_df.columns
+
+        for _, row in rows_df.iterrows():
+            first_name, last_name = parse_name(row.get("Account Name", ""))
+
+            if has_credit_col or has_owing_col:
+                credit = parse_amount(row.get("Credit"))
+                owing  = parse_amount(row.get("Owing"))
+            elif has_amount_due:
+                amount = parse_amount(row.get("Amount Due"))
+                if amount is None:
+                    credit, owing = None, None
+                elif amount < 0:
+                    credit, owing = abs(amount), None
+                else:
+                    credit, owing = None, amount
+            else:
+                credit, owing = None, None
+
+            data = [centre_name, first_name, last_name, credit, owing]
+            for col_idx, value in enumerate(data, start=1):
+                dst = ws.cell(row=excel_row, column=col_idx)
+                dst.value = value
+                s = style_ref.get(col_idx)
+                if s is not None:
+                    dst._style = copy.copy(s)
+
+            excel_row += 1
+
+    out_path = os.path.join(output_dir, "All_Services_Balance_Import.xlsx")
+    wb.save(out_path)
+    return out_path
+
+
+def write_duplicate_report(all_groups, template_bytes, output_dir):
+    """Create a report listing all rows whose (first name, last name) appears more than once."""
+    import io as _io
+
+    resolved_rows = []
+    for centre_name, rows_df in all_groups:
+        has_credit_col = "Credit" in rows_df.columns
+        has_owing_col  = "Owing"  in rows_df.columns
+        has_amount_due = "Amount Due" in rows_df.columns
+
+        for _, row in rows_df.iterrows():
+            first_name, last_name = parse_name(row.get("Account Name", ""))
+
+            if has_credit_col or has_owing_col:
+                credit = parse_amount(row.get("Credit"))
+                owing  = parse_amount(row.get("Owing"))
+            elif has_amount_due:
+                amount = parse_amount(row.get("Amount Due"))
+                if amount is None:
+                    credit, owing = None, None
+                elif amount < 0:
+                    credit, owing = abs(amount), None
+                else:
+                    credit, owing = None, amount
+            else:
+                credit, owing = None, None
+
+            resolved_rows.append((centre_name, first_name, last_name, credit, owing))
+
+    name_counts = Counter(
+        (centre.strip().lower(), first.strip().lower(), last.strip().lower())
+        for centre, first, last, _, _ in resolved_rows
+    )
+    duplicate_keys = {key for key, count in name_counts.items() if count > 1}
+
+    duplicate_rows = [
+        r for r in resolved_rows
+        if (r[0].strip().lower(), r[1].strip().lower(), r[2].strip().lower()) in duplicate_keys
+    ]
+
+    if not duplicate_rows:
+        return None
+
+    wb = load_workbook(_io.BytesIO(template_bytes))
+    ws = wb.active
+    if ws is None:
+        raise ValueError("Template workbook has no active sheet.")
+
+    style_ref: dict[int, object] = {
+        col_idx: copy.copy(ws.cell(row=5, column=col_idx)._style)
+        for col_idx in range(1, ws.max_column + 1)
+    }
+
+    for data_idx, (centre_name, first_name, last_name, credit, owing) in enumerate(duplicate_rows):
+        excel_row = 5 + data_idx
+        data = [centre_name, first_name, last_name, credit, owing]
+        for col_idx, value in enumerate(data, start=1):
+            dst = ws.cell(row=excel_row, column=col_idx)
+            dst.value = value
+            s = style_ref.get(col_idx)
+            if s is not None:
+                dst._style = copy.copy(s)
+
+    out_path = os.path.join(output_dir, "Duplicate_Accounts_Report.xlsx")
+    wb.save(out_path)
+    return out_path
+
+
 def _process_input_df(
     df: pd.DataFrame,
     filename: str,
     service_names: set,
     template_bytes: bytes,
     output_dir: str,
-) -> tuple[int, int, set, list[dict]]:
+) -> tuple[int, int, set, list[dict], list[tuple]]:
     """Process one input DataFrame and write per-centre output files.
 
-    Returns (total_outputs, total_rows, skipped_centres, created_files).
+    Returns (total_outputs, total_rows, skipped_centres, created_files, all_groups).
     created_files is a list of {"centre": str, "path": str, "rows": int}.
+    all_groups is a list of (centre_name, group_df) for consolidated/duplicate reports.
     """
     centre_col = next(
         (c for c in df.columns if c.lower().replace(" ", "") in ("centername", "centrename")),
         None,
     )
     if centre_col is None or "Account Name" not in df.columns:
-        return 0, 0, set(), []
+        return 0, 0, set(), [], []
 
     df[centre_col] = df[centre_col].fillna("").str.strip()
     df = df[~df["Account Name"].str.contains("demo parent", case=False, na=False)]
@@ -245,6 +367,7 @@ def _process_input_df(
     total_rows = 0
     skipped: set[str] = set()
     created: list[dict] = []
+    all_groups: list[tuple] = []
 
     for centre_name in seen_centres:
         if centre_name not in service_names:
@@ -256,8 +379,9 @@ def _process_input_df(
         total_rows += row_count
         total_outputs += 1
         created.append({"centre": centre_name, "path": out_path, "rows": row_count})
+        all_groups.append((centre_name, group))
 
-    return total_outputs, total_rows, skipped, created
+    return total_outputs, total_rows, skipped, created, all_groups
 
 
 def main(
@@ -282,7 +406,8 @@ def main(
     Returns
     -------
     dict with keys: total_outputs, total_rows, skipped_centres (set),
-    created_files (list of {centre, path, rows}), errors (list of str).
+    created_files (list of {centre, path, rows}), errors (list of str),
+    consolidated_path (str or None), duplicate_path (str or None).
     """
     os.makedirs(output_dir, exist_ok=True)
     service_names = load_service_names_bytes(service_ids_bytes)
@@ -291,6 +416,7 @@ def main(
     total_rows = 0
     skipped_centres: set[str] = set()
     created_files: list[dict] = []
+    all_groups: list[tuple] = []
     errors: list[str] = []
 
     for filename, data in input_files:
@@ -300,13 +426,20 @@ def main(
             errors.append(f"{filename}: {exc}")
             continue
 
-        n_out, n_rows, skipped, created = _process_input_df(
+        n_out, n_rows, skipped, created, groups = _process_input_df(
             df, filename, service_names, template_bytes, output_dir
         )
         total_outputs += n_out
         total_rows += n_rows
         skipped_centres |= skipped
         created_files.extend(created)
+        all_groups.extend(groups)
+
+    consolidated_path = None
+    duplicate_path = None
+    if all_groups:
+        consolidated_path = write_consolidated_output(all_groups, template_bytes, output_dir)
+        duplicate_path = write_duplicate_report(all_groups, template_bytes, output_dir)
 
     return {
         "total_outputs": total_outputs,
@@ -314,6 +447,8 @@ def main(
         "skipped_centres": skipped_centres,
         "created_files": created_files,
         "errors": errors,
+        "consolidated_path": consolidated_path,
+        "duplicate_path": duplicate_path,
     }
 
 
@@ -335,6 +470,12 @@ def _main_cli():
     print(f"Done. {result['total_outputs']} output file(s) created, {result['total_rows']} data row(s) written.")
     for cf in result["created_files"]:
         print(f"  Created: {os.path.basename(cf['path'])}  ({cf['rows']} rows)")
+    if result["consolidated_path"]:
+        print(f"Consolidated: {os.path.basename(result['consolidated_path'])}  ({result['total_rows']} row{'s' if result['total_rows'] != 1 else ''} across {result['total_outputs']} service{'s' if result['total_outputs'] != 1 else ''})")
+    if result["duplicate_path"]:
+        print(f"Duplicates:   {os.path.basename(result['duplicate_path'])}")
+    elif result["consolidated_path"]:
+        print("Duplicates:   none found")
     if result["skipped_centres"]:
         print(f"Skipped {len(result['skipped_centres'])} centre(s) not in serviceIDs.csv:")
         for c in sorted(result["skipped_centres"]):

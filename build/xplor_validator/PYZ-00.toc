@@ -1,5 +1,4 @@
-('C:\\Users\\AmyBoonyaratanakornk\\OneDrive - Xplor '
- 'Technologies\\Validator\\build\\xplor_validator\\PYZ-00.pyz',
+('C:\\Users\\AmyBoonyaratanakornk\\Projects\\Validator\\build\\xplor_validator\\PYZ-00.pyz',
  [('__future__',
    'C:\\Users\\AmyBoonyaratanakornk\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\__future__.py',
    'PYMODULE'),
