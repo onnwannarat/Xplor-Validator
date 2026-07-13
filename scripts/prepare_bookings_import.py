@@ -155,7 +155,8 @@ def _add_schedule_overlap_sheet(wb: Workbook, df_conflicts: pd.DataFrame) -> Non
     """Add a 'Recurring Schedule Overlaps' sheet to an existing workbook.
 
     Also appends a summary section to the existing 'About This Report' sheet.
-    Both conflicting rows in each pair are marked REMOVE — neither is kept.
+    Within each conflicting group, the row with the furthest EndDate is kept
+    in bookings_import; the other row(s) shown here were removed.
     """
     ws = wb.create_sheet("Recurring Schedule Overlaps")
     report_cols = TEMPLATE_COLUMNS + ["ConflictReason"]
@@ -200,8 +201,10 @@ def _add_schedule_overlap_sheet(wb: Workbook, df_conflicts: pd.DataFrame) -> Non
              "whose date ranges overlap AND which share at least one common booked weekday. "
              "This means the child would be double-booked in the same slot."),
             ("Action taken",
-             "ALL conflicting rows have been removed from the Recurring import files. "
-             "They appear in the 'Recurring Schedule Overlaps' sheet of this workbook."),
+             "Within each conflicting group, the row with the furthest (latest) EndDate is "
+             "kept and included in the Recurring bookings_import file. The other row(s) in "
+             "the group have been removed and appear in the 'Recurring Schedule Overlaps' "
+             "sheet of this workbook."),
             ("If removal looks incorrect",
              "Verify the date ranges and day patterns in the source data. "
              "Correct the source and re-run the script."),
@@ -279,6 +282,18 @@ def parse_date(series: pd.Series) -> pd.Series:
         result[still_na] = fallback
 
     return result.dt.strftime("%d/%m/%Y")
+
+
+def _year_end_date(start_date: str) -> str:
+    """Return 31/12 of start_date's year (DD/MM/YYYY), e.g. '06/08/2028' -> '31/12/2028'.
+
+    Falls back to DEFAULT_END_DATE when start_date can't be parsed.
+    """
+    try:
+        year = datetime.datetime.strptime(str(start_date).strip(), "%d/%m/%Y").year
+        return f"31/12/{year}"
+    except (ValueError, TypeError):
+        return DEFAULT_END_DATE
 
 
 def load_service_mapping(path) -> dict:
@@ -480,10 +495,13 @@ def process_df(df_raw: pd.DataFrame, service_map: dict) -> tuple[pd.DataFrame, s
     df["EndDate"]       = parse_date(df["EndDate"])
     df["QKCreatedDate"] = parse_date(df["QKCreatedDate"])
 
-    # Default empty EndDate → 31/12/2026
-    df["EndDate"] = df["EndDate"].replace("NaT", "").apply(
-        lambda v: DEFAULT_END_DATE if (pd.isna(v) or str(v).strip() in ("", "NaT", "nan")) else v
-    )
+    # Default empty EndDate → 31/12 of the StartDate's year
+    # (e.g. StartDate 06/08/2028 with no EndDate → EndDate 31/12/2028)
+    df["EndDate"] = df["EndDate"].replace("NaT", "")
+    df["EndDate"] = [
+        _year_end_date(start) if str(end).strip() in ("", "NaT", "nan") else end
+        for start, end in zip(df["StartDate"], df["EndDate"])
+    ]
 
     # Frequency: 'single' → 'CASUAL'
     df["WeekType"] = df["WeekType"].str.strip().apply(
@@ -649,21 +667,23 @@ def detect_recurring_schedule_overlaps(
       3. Date ranges overlap  (start_A <= end_B  AND  start_B <= end_A)
       4. At least one shared booked day (MON1–SUN2 columns both = 1)
 
-    BOTH rows in each conflicting pair are removed — neither is kept, because
-    it is impossible to tell automatically which date range or day pattern is
-    correct.
+    Within each group of mutually-conflicting rows, the row with the furthest
+    (latest) EndDate is KEPT and included in the bookings_import sheet — it is
+    the schedule most likely to represent the child's current/ongoing booking.
+    All other rows in that group are removed. Ties (identical EndDate) keep
+    the first-created row (lowest source order).
 
     Returns:
-        df_clean     – df_recurring with all conflicting rows removed
-        df_conflicts – the conflicting rows with an extra 'ConflictReason' column
+        df_clean     – df_recurring with the losing conflicting rows removed
+        df_conflicts – the removed rows with an extra 'ConflictReason' column
     """
     DAY_COLS = [
         "MON1", "TUE1", "WED1", "THU1", "FRI1", "SAT1", "SUN1",
         "MON2", "TUE2", "WED2", "THU2", "FRI2", "SAT2", "SUN2",
     ]
 
-    conflict_indices: set  = set()
-    index_to_reason:  dict = {}
+    removed_indices: set  = set()
+    index_to_reason: dict = {}
 
     for _, grp in df_recurring.groupby(
         ["Child_Legacy_Id", "ServiceID"], sort=False
@@ -672,19 +692,25 @@ def detect_recurring_schedule_overlaps(
             continue
 
         idx_list = list(grp.index)
+        parsed: dict = {}
+        for idx in idx_list:
+            row   = grp.loc[idx]
+            start = pd.to_datetime(row["StartDate"], format="%d/%m/%Y", errors="coerce")
+            end   = pd.to_datetime(row["EndDate"],   format="%d/%m/%Y", errors="coerce")
+            parsed[idx] = (row, start, end)
+
+        adjacency:   dict = {idx: set() for idx in idx_list}
+        pair_reason: dict = {}
+
         for i in range(len(idx_list)):
             idx_a = idx_list[i]
-            row_a = grp.loc[idx_a]
-            start_a = pd.to_datetime(row_a["StartDate"], format="%d/%m/%Y", errors="coerce")
-            end_a   = pd.to_datetime(row_a["EndDate"],   format="%d/%m/%Y", errors="coerce")
+            row_a, start_a, end_a = parsed[idx_a]
             if pd.isna(start_a) or pd.isna(end_a):
                 continue
 
             for j in range(i + 1, len(idx_list)):
                 idx_b = idx_list[j]
-                row_b = grp.loc[idx_b]
-                start_b = pd.to_datetime(row_b["StartDate"], format="%d/%m/%Y", errors="coerce")
-                end_b   = pd.to_datetime(row_b["EndDate"],   format="%d/%m/%Y", errors="coerce")
+                row_b, start_b, end_b = parsed[idx_b]
                 if pd.isna(start_b) or pd.isna(end_b):
                     continue
 
@@ -715,15 +741,56 @@ def detect_recurring_schedule_overlaps(
                     f"date overlap {ov_start}–{ov_end}, "
                     f"shared booked days: {', '.join(shared_days)}"
                 )
-                conflict_indices.add(idx_a)
-                conflict_indices.add(idx_b)
-                index_to_reason.setdefault(idx_a, reason)
-                index_to_reason.setdefault(idx_b, reason)
+                adjacency[idx_a].add(idx_b)
+                adjacency[idx_b].add(idx_a)
+                pair_reason[(idx_a, idx_b)] = reason
 
-    df_conflicts = df_recurring.loc[sorted(conflict_indices)].copy()
+        # Group conflicting rows into connected components, then keep only the
+        # row with the furthest EndDate in each component.
+        visited: set = set()
+        for seed in idx_list:
+            if seed in visited or not adjacency[seed]:
+                continue
+
+            component: set = set()
+            queue = [seed]
+            while queue:
+                cur = queue.pop()
+                if cur in component:
+                    continue
+                component.add(cur)
+                visited.add(cur)
+                queue.extend(n for n in adjacency[cur] if n not in component)
+
+            if len(component) < 2:
+                continue
+
+            def _end_key(idx):
+                _, _, end = parsed[idx]
+                return end if not pd.isna(end) else pd.Timestamp.min
+
+            # Furthest EndDate wins; ties keep the first-created (lowest index) row.
+            keep_idx = max(component, key=lambda idx: (_end_key(idx), -idx))
+            kept_end = _end_key(keep_idx).strftime("%d/%m/%Y")
+
+            for idx in component:
+                if idx == keep_idx:
+                    continue
+                reason = next(
+                    (r for (a, b), r in pair_reason.items() if idx in (a, b)),
+                    "Overlapping recurring schedule.",
+                )
+                reason += (
+                    f" Removed in favour of the row with the furthest EndDate "
+                    f"({kept_end}), which was kept in the bookings import."
+                )
+                removed_indices.add(idx)
+                index_to_reason[idx] = reason
+
+    df_conflicts = df_recurring.loc[sorted(removed_indices)].copy()
     df_conflicts["ConflictReason"] = df_conflicts.index.map(index_to_reason)
 
-    df_clean = df_recurring.drop(index=list(conflict_indices)).reset_index(drop=True)
+    df_clean = df_recurring.drop(index=list(removed_indices)).reset_index(drop=True)
     return df_clean, df_conflicts.reset_index(drop=True)
 
 

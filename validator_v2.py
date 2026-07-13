@@ -1714,7 +1714,7 @@ def check_intra_file_parent_duplicates(
     """
     Detects duplicate parent profiles within the upload file.
 
-    A duplicate profile is flagged when two parent slots (P1 or P2, in any
+    A duplicate profile is detected when two parent slots (P1 or P2, in any
     combination, across any services) satisfy ALL of:
 
       1. First name + last name match (case-insensitive)
@@ -1725,12 +1725,19 @@ def check_intra_file_parent_duplicates(
     Condition 4 is the key: if the same person correctly shares one Legacy ID
     across multiple child rows, the system will link them automatically and no
     action is needed.  Differing Legacy IDs mean two separate accounts would be
-    created for the same physical person, requiring manual clean-up after import.
+    created for the same physical person.
 
     This check covers two real-world scenarios:
       • Cross-service  — parent appears in different services with different IDs
       • Same-service   — parent appears as P1 for one child and P2 for another
                          with different IDs (e.g. data-entry error in source system)
+
+    Auto-link action: once a duplicate pair is found, the later profile's
+    Legacy Account ID and CRN are overwritten in-place with the first-created
+    profile's (the one with the lower row number) so both children link to the
+    same parent profile post-publishing, instead of creating two accounts. The
+    row mutation happens before CSVs are written, so the fix carries through to
+    the import file.  The action is logged as FIXED (not WARNING) for both rows.
 
     Each pair is reported once — from the perspective of the earlier row.
     """
@@ -1764,6 +1771,8 @@ def check_intra_file_parent_duplicates(
             )
 
             profiles.append({
+                "row":         row,
+                "prefix":      prefix,
                 "row_num":     row_num,
                 "child_name":  child_name,
                 "parent_slot": prefix,
@@ -1822,12 +1831,30 @@ def check_intra_file_parent_duplicates(
             matched_contact = next(iter(shared_contacts))
             matched_str = f"DOB: {pa['dob']}, Contact: {matched_contact}"
 
+            # ── Auto-link: keep the first-created profile's identity, and
+            # overwrite the later profile's Legacy Account ID / CRN with it so
+            # both children resolve to the same parent profile post-publishing.
+            first, later = (pa, pb) if pa["row_num"] <= pb["row_num"] else (pb, pa)
+
+            first_legacy_raw = first["row"].get(f"{first['prefix']}_Legacy_Account_ID", "").strip()
+            first_crn_raw    = first["row"].get(f"{first['prefix']}_CRN", "").strip()
+            later_legacy_before = later["row"].get(f"{later['prefix']}_Legacy_Account_ID", "").strip()
+            later_crn_before    = later["row"].get(f"{later['prefix']}_CRN", "").strip()
+
+            if first_legacy_raw:
+                later["row"][f"{later['prefix']}_Legacy_Account_ID"] = first_legacy_raw
+            if first_crn_raw:
+                later["row"][f"{later['prefix']}_CRN"] = first_crn_raw
+
             msg = (
                 f"Duplicate parent profile: '{pa['display']}' (legacy '{pa['legacy_id']}') and "
                 f"'{pb['display']}' (legacy '{pb['legacy_id']}') appear to be the same person "
                 f"in {context}. Matched on: {matched_str}. "
-                f"Action required: After import, link both children to the same parent "
-                f"profile and remove the duplicate account."
+                f"Auto-linked: {later['child_name']}'s {later['parent_slot']} profile "
+                f"(legacy '{later_legacy_before}', CRN '{later_crn_before}') was reassigned to "
+                f"{first['child_name']}'s {first['parent_slot']} profile "
+                f"(legacy '{first_legacy_raw}', CRN '{first_crn_raw}', first created at row {first['row_num']}) "
+                f"so both children link to the same parent profile post-publishing."
             )
 
             # Record once for each side so both legacy IDs are searchable in the report
@@ -1837,7 +1864,13 @@ def check_intra_file_parent_duplicates(
                     src["child_name"],
                     f"{src['parent_slot']}_Legacy_Account_ID",
                     msg,
-                    "WARNING",
+                    "FIXED",
+                    action=(
+                        f"Linked to first-created profile at row {first['row_num']} "
+                        f"(legacy '{first_legacy_raw}', CRN '{first_crn_raw}')"
+                        if src is later else
+                        f"Kept as first-created profile; row {later['row_num']} linked to it"
+                    ),
                     tag="intra_file_duplicate_parent",
                     parent_slot=src["parent_slot"],
                     parent_name=src["display"],
