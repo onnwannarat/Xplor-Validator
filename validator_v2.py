@@ -1072,6 +1072,35 @@ def transform_consents_photos(
             )
 
 
+def transform_emergency_contact_booleans(
+    row: dict, row_num: int, child_name: str,
+    recorder: IssueRecorder, headers: set,
+) -> None:
+    """
+    Converts True/False (case-insensitive) values in the Emergency Contact
+    boolean fields (Emergency_Contact, Medical_Nominee, Collection_Nominee,
+    Excursion_Nominee, for contacts 1-5) to 1/0.
+    """
+    for field in BOOLEAN_FIELDS:
+        if "EmergencyContact" not in field:
+            continue
+        if field not in headers:
+            continue
+        value = row.get(field, "").strip()
+        if value.lower() == "true":
+            row[field] = "1"
+        elif value.lower() == "false":
+            row[field] = "0"
+        else:
+            continue
+        recorder.add(
+            row_num, child_name, field,
+            f"'{field}' value '{value}' converted to '{row[field]}'.",
+            "FIXED",
+            action=f"'{field}' set to '{row[field]}' (was '{value}')",
+        )
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # PER-ROW VALIDATION FUNCTIONS  (unchanged from v1)
 # ─────────────────────────────────────────────────────────────────────────────
@@ -2673,6 +2702,15 @@ def run_v2(
         )
     print(" done.")
 
+    # ── Pass 8b: Emergency contact booleans True/False → 1/0 ─────────────────
+    print("  Converting EC booleans        ...", end="", flush=True)
+    for entry in all_rows:
+        transform_emergency_contact_booleans(
+            entry["row"], entry["row_num"], entry["child_name"],
+            recorder, headers,
+        )
+    print(" done.")
+
     # ── Pass 9: Per-row validation ────────────────────────────────────────────
     print("  Running per-row validation   ...", end="", flush=True)
     for entry in all_rows:
@@ -2830,6 +2868,9 @@ def run_v2_from_bytes(
 
     for entry in all_rows:
         transform_consents_photos(entry["row"], entry["row_num"], entry["child_name"], recorder, headers)
+
+    for entry in all_rows:
+        transform_emergency_contact_booleans(entry["row"], entry["row_num"], entry["child_name"], recorder, headers)
 
     # Per-row validation
     for entry in all_rows:
