@@ -38,7 +38,7 @@
 <h1>Xplor Data Migration Tools &mdash; User Guide (macOS)</h1>
 
 <div class="info">
-  <div class="panel-title">Version 3.0.0</div>
+  <div class="panel-title">Version 3.0.1</div>
   This guide covers the unified app that replaces all previous standalone tools. You no longer need to download or manage multiple scripts. Everything is available in one application.
 </div>
 
@@ -194,6 +194,7 @@
   <li><strong>Emergency contact emails deduplicated within the EC block</strong> &mdash; if a later emergency contact's email matches an earlier one, the later email is cleared (EC1 takes priority over EC2&ndash;EC5)</li>
   <li><strong>Emergency contact email cleared</strong> if it matches Parent 1 or Parent 2 email &mdash; a parent who is also listed as an emergency contact will have the duplicate EC email removed</li>
   <li><strong>Child CRN cleared</strong> when it is identical to Parent 1 CRN or Parent 2 CRN &mdash; a child and parent cannot share the same CRN</li>
+  <li><strong>Emergency contact boolean fields converted</strong> &mdash; True/False values in Emergency Contact, Medical Nominee, Collection Nominee, and Excursion Nominee (contacts 1&ndash;5) are converted to 1/0</li>
 </ul>
 
 <p><strong>Validated and flagged:</strong></p>

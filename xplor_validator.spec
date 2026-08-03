@@ -163,8 +163,8 @@ if sys.platform == "darwin":
         info_plist={
             "CFBundleName":               "Xplor Migration Tools",
             "CFBundleDisplayName":        "Xplor Data Migration Tools",
-            "CFBundleShortVersionString": "3.0.0",
-            "CFBundleVersion":            "3.0.0",
+            "CFBundleShortVersionString": "3.0.1",
+            "CFBundleVersion":            "3.0.1",
             "NSHighResolutionCapable":    True,
             "NSHumanReadableCopyright":   "Xplor Technologies",
             # Allow the browser to open localhost URLs from the app
