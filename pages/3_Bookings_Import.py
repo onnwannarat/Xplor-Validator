@@ -160,6 +160,22 @@ with col_path:
 output_folder = st.session_state.get("bookings_output_folder", "").strip()
 
 # ─────────────────────────────────────────────────────────────────────────────
+# DEFAULT END DATE
+# ─────────────────────────────────────────────────────────────────────────────
+
+st.markdown("**Default booking end date** (optional)")
+default_end_date_value = st.date_input(
+    "Default booking end date",
+    value=None,
+    format="DD/MM/YYYY",
+    help="Applied to any booking with a blank End Date. Leave empty to fall back "
+         "to 31/12 of that booking's own Start Date year.",
+    label_visibility="collapsed",
+    key="bookings_default_end_date",
+)
+default_end_date = default_end_date_value.strftime("%d/%m/%Y") if default_end_date_value else ""
+
+# ─────────────────────────────────────────────────────────────────────────────
 # RUN BUTTON
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -193,6 +209,7 @@ with st.spinner("Processing bookings — please wait…"):
             input_files=input_files,
             service_ids_bytes=svc_map_bytes,
             output_dir=output_folder,
+            default_end_date=default_end_date,
         )
     except Exception as exc:
         st.error(f"Error processing bookings: {exc}")

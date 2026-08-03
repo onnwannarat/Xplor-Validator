@@ -103,7 +103,8 @@ Processes QikKids recurring and casual booking exports, deduplicates rows, remov
 - Detects and removes recurring schedule overlaps (same child, overlapping date range, shared booked day)
 - Detects and removes casual bookings that fall within an existing recurring booking's pattern
 - Maps QK service IDs to Xplor service IDs using `serviceIDs.csv`
-- Reformats dates to `DD/MM/YYYY` and sets default end dates
+- Reformats dates to `DD/MM/YYYY`
+- Fills blank End Dates using the optional **default booking end date** entered on the page; falls back to 31/12 of each booking's own Start Date year when left blank
 - Saves split CSVs to `Output/Recurring/` and `Output/Casual/` inside the chosen output folder
 - Saves a duplicate bookings report and a removed casual overlaps report as Excel files
 

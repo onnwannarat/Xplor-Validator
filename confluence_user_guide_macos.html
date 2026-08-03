@@ -38,7 +38,7 @@
 <h1>Xplor Data Migration Tools &mdash; User Guide (macOS)</h1>
 
 <div class="info">
-  <div class="panel-title">Version 3.0.1</div>
+  <div class="panel-title">Version 3.0.2</div>
   This guide covers the unified app that replaces all previous standalone tools. You no longer need to download or manage multiple scripts. Everything is available in one application.
 </div>
 
@@ -281,12 +281,14 @@
   <tr><th>Input</th><th>Description</th></tr>
   <tr><td>QikKids booking files</td><td>One or more exports (CSV or XLSX) &mdash; recurring and casual files can be uploaded together</td></tr>
   <tr><td>Output folder</td><td>Folder where split output files will be saved</td></tr>
+  <tr><td>Default booking end date <em>(optional)</em></td><td>Applied to any booking with a blank End Date. Leave empty to fall back to 31/12 of that booking's own Start Date year</td></tr>
 </table>
 
 <h3>Steps</h3>
 <ol>
   <li>Upload one or more <strong>QikKids booking files</strong></li>
   <li>Select your <strong>output folder</strong></li>
+  <li><em>(Optional)</em> Set a <strong>default booking end date</strong> to apply to bookings with a blank End Date</li>
   <li>Click <strong>Process Bookings</strong></li>
   <li>Review the results summary and any conflict warnings</li>
   <li>Collect your output files from the output folder</li>
@@ -300,7 +302,8 @@
   <li>Detects <strong>recurring schedule overlaps</strong> (same child, overlapping date range, shared booking day)</li>
   <li>Removes <strong>casual bookings that fall within existing recurring patterns</strong></li>
   <li>Maps QikKids service IDs to Xplor service IDs</li>
-  <li>Reformats dates to DD/MM/YYYY and sets default end dates to 31/12/2026</li>
+  <li>Reformats dates to DD/MM/YYYY</li>
+  <li><strong>Fills blank End Dates</strong> &mdash; uses the <strong>default booking end date</strong> you enter, if set; otherwise defaults to 31/12 of each booking's own Start Date year</li>
   <li>Splits output by service and booking type (recurring vs casual)</li>
 </ul>
 

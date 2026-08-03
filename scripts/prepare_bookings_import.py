@@ -284,11 +284,17 @@ def parse_date(series: pd.Series) -> pd.Series:
     return result.dt.strftime("%d/%m/%Y")
 
 
-def _year_end_date(start_date: str) -> str:
-    """Return 31/12 of start_date's year (DD/MM/YYYY), e.g. '06/08/2028' -> '31/12/2028'.
+def _year_end_date(start_date: str, override: str = "") -> str:
+    """Return the fallback EndDate for a row whose EndDate is blank.
 
-    Falls back to DEFAULT_END_DATE when start_date can't be parsed.
+    If `override` (DD/MM/YYYY) is supplied, it is used for every row
+    regardless of the booking's start year. Otherwise falls back to 31/12
+    of start_date's year (DD/MM/YYYY), e.g. '06/08/2028' -> '31/12/2028',
+    or DEFAULT_END_DATE when start_date can't be parsed.
     """
+    override = str(override).strip()
+    if override:
+        return override
     try:
         year = datetime.datetime.strptime(str(start_date).strip(), "%d/%m/%Y").year
         return f"31/12/{year}"
@@ -455,8 +461,14 @@ def detect_duplicates_and_report(
 # Pipeline: transform raw → template format
 # ─────────────────────────────────────────────
 
-def process_df(df_raw: pd.DataFrame, service_map: dict) -> tuple[pd.DataFrame, set]:
+def process_df(
+    df_raw: pd.DataFrame, service_map: dict, default_end_date: str = "",
+) -> tuple[pd.DataFrame, set]:
     """Transform a raw (source-column) DataFrame into the template format.
+
+    default_end_date: optional DD/MM/YYYY override used for every row with a
+    blank EndDate. When not supplied, falls back to 31/12 of that row's
+    StartDate year.
 
     Returns (transformed_df, set_of_unmapped_qk_ids).
     """
@@ -499,7 +511,7 @@ def process_df(df_raw: pd.DataFrame, service_map: dict) -> tuple[pd.DataFrame, s
     # (e.g. StartDate 06/08/2028 with no EndDate → EndDate 31/12/2028)
     df["EndDate"] = df["EndDate"].replace("NaT", "")
     df["EndDate"] = [
-        _year_end_date(start) if str(end).strip() in ("", "NaT", "nan") else end
+        _year_end_date(start, default_end_date) if str(end).strip() in ("", "NaT", "nan") else end
         for start, end in zip(df["StartDate"], df["EndDate"])
     ]
 
@@ -839,6 +851,7 @@ def main(
     input_files: list[tuple[str, bytes]],
     service_ids_bytes: bytes,
     output_dir: str,
+    default_end_date: str = "",
 ) -> dict:
     """Process booking files and write output CSVs + reports to output_dir.
 
@@ -848,6 +861,10 @@ def main(
         List of (filename, file_bytes) for each booking CSV/XLSX.
     service_ids_bytes:
         Raw bytes of serviceIDs.csv.
+    default_end_date:
+        Optional DD/MM/YYYY override applied to every row with a blank
+        EndDate. When not supplied, each row falls back to 31/12 of its own
+        StartDate year.
     output_dir:
         Absolute path to the destination folder.  Sub-folders Recurring/ and
         Casual/ will be created inside it.
@@ -893,7 +910,7 @@ def main(
         detect_duplicates_and_report(df_raw_all, output_dir)
 
     # 5. Transform de-duplicated raw data into template format
-    df_all, all_unmapped = process_df(df_raw_clean, service_map)
+    df_all, all_unmapped = process_df(df_raw_clean, service_map, default_end_date)
 
     # 6. Separate recurring and casual bookings
     is_casual_mask = df_all["WeekType"].str.upper() == "CASUAL"
