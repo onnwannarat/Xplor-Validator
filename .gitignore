@@ -5,3 +5,15 @@ dist/
 *.app
 *.exe
 *.spec
+
+# Client data — never commit real service maps or export data
+serviceIDs.csv
+input/
+output/
+To deploy/Input/
+*QikKids*.csv
+
+# Secrets
+.env
+.env.*
+!.env.example
